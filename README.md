@@ -118,6 +118,8 @@ Current automated coverage includes:
 
 GitHub Actions runs the locked application checks first, followed by the Chromium browser suite. Browser traces, screenshots, and the HTML report are retained as short-lived artifacts when the browser job fails.
 
+The current branch verification passes 15 unit tests across four files and four Chromium browser scenarios.
+
 ## Vercel deployment
 
 1. Import this GitHub repository into Vercel.
