@@ -65,15 +65,39 @@ export function summarizeOrders(orders) {
   );
 }
 
+function orderTimestamp(order) {
+  for (const field of ['created_at', 'submitted_at', 'updated_at']) {
+    if (!order?.[field]) continue;
+    const timestamp = new Date(order[field]).getTime();
+    if (Number.isFinite(timestamp)) return timestamp;
+  }
+  return null;
+}
+
 export function recentOrders(orders, limit = 5) {
   const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 5;
   return [...(Array.isArray(orders) ? orders : [])]
     .sort((left, right) => {
+      const leftTimestamp = orderTimestamp(left);
+      const rightTimestamp = orderTimestamp(right);
+
+      if (leftTimestamp !== null || rightTimestamp !== null) {
+        if (leftTimestamp === null) return 1;
+        if (rightTimestamp === null) return -1;
+        if (leftTimestamp !== rightTimestamp) return rightTimestamp - leftTimestamp;
+      }
+
       const leftId = Number(left?.id);
       const rightId = Number(right?.id);
-      return Number.isFinite(leftId) && Number.isFinite(rightId) ? rightId - leftId : 0;
+      if (Number.isFinite(leftId) && Number.isFinite(rightId)) return rightId - leftId;
+      return String(right?.id ?? '').localeCompare(String(left?.id ?? ''));
     })
     .slice(0, safeLimit);
+}
+
+export function pruneSelectedOrderIds(selected, orders) {
+  const eligibleIds = new Set((Array.isArray(orders) ? orders : []).map((order) => order?.id));
+  return new Set([...(selected instanceof Set ? selected : [])].filter((id) => eligibleIds.has(id)));
 }
 
 export function statusClasses(status) {
