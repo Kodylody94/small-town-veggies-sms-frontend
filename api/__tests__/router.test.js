@@ -6,17 +6,19 @@ import {
   MemoryIdempotencyStore,
   MemoryRateLimiter,
   MemoryRepository,
+  MemorySessionStore,
 } from '../_lib/stores.js';
 
 const NOW = Date.UTC(2026, 5, 30, 12, 0, 0);
 const ORIGIN = 'https://dashboard.example.com';
+const PASSWORD_HASH = createPasswordHash('correct horse battery staple');
 
 function makeConfig() {
   return {
     production: true,
     appOrigin: ORIGIN,
     sessionSecret: 'session-secret-that-is-at-least-thirty-two-characters',
-    adminPasswordHash: createPasswordHash('correct horse battery staple'),
+    adminPasswordHash: PASSWORD_HASH,
     sessionTtlSeconds: 3600,
     allowSameSiteRequests: false,
     runtimeMode: 'test',
@@ -34,6 +36,7 @@ function makeDependencies(overrides = {}) {
       customers: [{ id: 1, name: 'Kody', opted_in: true }],
       products: [{ id: 1, name: 'Tomatoes', price: 25, unit: 'bucket', active: true }],
     }),
+    sessionStore: new MemorySessionStore({ now: () => NOW }),
     rateLimiter: new MemoryRateLimiter({ limit: 20, now: () => NOW }),
     idempotencyStore: new MemoryIdempotencyStore(),
     auditStore: new MemoryAuditStore(),
@@ -129,6 +132,7 @@ describe('protected backend router', () => {
       status: 'ok',
       configured: false,
       database: 'not_connected',
+      session_store: 'not_connected',
       live_mutations: false,
       messaging: 'disabled',
     });
@@ -171,6 +175,24 @@ describe('protected backend router', () => {
 
     expect(response.statusCode).toBe(401);
     expect(response.payload.code).toBe('INVALID_SESSION');
+  });
+
+  it('revokes the server-side session during logout', async () => {
+    const handler = createBackendHandler(makeDependencies());
+    const session = await login(handler);
+    const logoutResponse = await dispatch(handler, '/auth/logout', {
+      method: 'POST',
+      headers: protectedHeaders(session),
+      body: {},
+    });
+    const replayResponse = await dispatch(handler, '/orders', {
+      headers: { origin: ORIGIN, cookie: session.cookie },
+    });
+
+    expect(logoutResponse.statusCode).toBe(200);
+    expect(logoutResponse.headers['Set-Cookie']).toContain('Max-Age=0');
+    expect(replayResponse.statusCode).toBe(401);
+    expect(replayResponse.payload.code).toBe('SESSION_REVOKED');
   });
 
   it('returns contract envelopes for authenticated collections', async () => {
