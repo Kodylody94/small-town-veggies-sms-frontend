@@ -1,14 +1,19 @@
 import { normalizeCollection, normalizeCustomer, normalizeOrder, normalizeProduct } from './contracts';
 import { demoCustomers, demoOrders, demoProducts } from './demoData';
 
-const apiUrl = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+const configuredApiUrl = (import.meta.env.VITE_API_URL ?? '').trim();
+const apiUrl = configuredApiUrl === 'same-origin' ? '' : configuredApiUrl.replace(/\/$/, '');
 const explicitDemoMode = import.meta.env.VITE_ENABLE_DEMO_DATA === 'true';
 const REQUEST_TIMEOUT_MS = 15_000;
 
 export const MUTATION_REQUEST_HEADER = 'X-Small-Town-Veggies-Request';
-export const isDemoMode = explicitDemoMode || !apiUrl;
+export const CSRF_REQUEST_HEADER = 'X-CSRF-Token';
+export const IDEMPOTENCY_REQUEST_HEADER = 'Idempotency-Key';
+export const isDemoMode = explicitDemoMode || !configuredApiUrl;
 export const liveMutationsEnabled =
   !isDemoMode && import.meta.env.VITE_ENABLE_LIVE_MUTATIONS === 'true';
+
+let csrfToken = null;
 
 const demoPayloads = {
   '/api/orders': demoOrders,
@@ -27,18 +32,45 @@ function encodeOrderId(id) {
   return encodeURIComponent(value);
 }
 
-export function buildRequestHeaders(options = {}, isMutation = false) {
+function createIdempotencyKey() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  if (globalThis.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(24);
+    globalThis.crypto.getRandomValues(bytes);
+    return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  }
+  throw new Error('Secure idempotency key generation is unavailable in this browser.');
+}
+
+export function setCsrfToken(value) {
+  csrfToken = typeof value === 'string' && value.length >= 20 ? value : null;
+}
+
+export function clearCsrfToken() {
+  csrfToken = null;
+}
+
+export function buildRequestHeaders(options = {}, isMutation = false, policy = {}) {
   const headers = new Headers(options.headers ?? {});
   headers.set('Accept', 'application/json');
 
-  if (options.body != null && !headers.has('Content-Type')) {
+  if ((options.body != null || isMutation) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
   if (isMutation) {
-    // This non-secret custom header forces a browser CORS preflight. The backend must
-    // require it together with exact-origin CORS and Origin/Fetch-Metadata checks.
     headers.set(MUTATION_REQUEST_HEADER, 'dashboard');
+
+    if (policy.requiresCsrf) {
+      if (!csrfToken) {
+        throw new Error('A valid administrator session is required before making changes.');
+      }
+      headers.set(CSRF_REQUEST_HEADER, csrfToken);
+    }
+
+    if (policy.requiresIdempotency && !headers.has(IDEMPOTENCY_REQUEST_HEADER)) {
+      headers.set(IDEMPOTENCY_REQUEST_HEADER, createIdempotencyKey());
+    }
   }
 
   return headers;
@@ -84,8 +116,9 @@ async function parseResponse(response) {
   return payload;
 }
 
-async function request(path, options = {}, isMutation = false) {
+async function request(path, options = {}, policy = {}) {
   const method = (options.method ?? 'GET').toUpperCase();
+  const isMutation = policy.mutation === true;
 
   if (isDemoMode) {
     if (method !== 'GET') {
@@ -97,7 +130,7 @@ async function request(path, options = {}, isMutation = false) {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const { headers: _providedHeaders, ...fetchOptions } = options;
-  const headers = buildRequestHeaders(options, isMutation);
+  const headers = buildRequestHeaders(options, isMutation, policy);
 
   try {
     const response = await fetch(`${apiUrl}${path}`, {
@@ -127,10 +160,37 @@ function mutationRequest(path, options) {
         : 'Live changes are locked until VITE_ENABLE_LIVE_MUTATIONS is explicitly enabled.',
     );
   }
-  return request(path, options, true);
+  return request(path, options, {
+    mutation: true,
+    requiresCsrf: true,
+    requiresIdempotency: true,
+  });
 }
 
 export const api = {
+  login: async (password) => {
+    const session = await request(
+      '/api/auth/login',
+      { method: 'POST', body: JSON.stringify({ password }) },
+      { mutation: true },
+    );
+    setCsrfToken(session?.csrf_token);
+    return session;
+  },
+  getSession: async () => {
+    const session = await request('/api/auth/session');
+    setCsrfToken(session?.csrf_token);
+    return session;
+  },
+  logout: async () => {
+    const result = await request(
+      '/api/auth/logout',
+      { method: 'POST' },
+      { mutation: true, requiresCsrf: true },
+    );
+    clearCsrfToken();
+    return result;
+  },
   getOrders: async () =>
     normalizeCollection(await request('/api/orders'), 'orders', normalizeOrder),
   confirmOrder: (id) =>
