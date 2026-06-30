@@ -6,6 +6,11 @@ import { formatMoney } from '../utils';
 import { validateProductForm } from '../validation';
 
 const emptyForm = { name: '', price: '', unit: '' };
+const availabilityPresentation = {
+  available: { label: 'Available', classes: 'bg-emerald-100 text-emerald-900' },
+  unavailable: { label: 'Unavailable', classes: 'bg-stone-200 text-stone-700' },
+  unknown: { label: 'Unknown — unavailable', classes: 'bg-amber-100 text-amber-950' },
+};
 
 export default function Products() {
   const [products, setProducts] = useState([]);
@@ -77,7 +82,7 @@ export default function Products() {
       <PageHeader
         eyebrow="Availability"
         title="Products"
-        description="Maintain the items, units, and prices customers can order."
+        description="Maintain the items, units, and prices customers can order. Missing availability is treated as unavailable."
       />
 
       {errorState && (
@@ -168,18 +173,21 @@ export default function Products() {
                 </tr>
               </thead>
               <tbody>
-                {products.map((product) => (
-                  <tr key={product.id}>
-                    <td className="font-bold text-emerald-950">{product.name || 'Unnamed product'}</td>
-                    <td>{formatMoney(product.price)}</td>
-                    <td>{product.unit || '—'}</td>
-                    <td>
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${product.active === false ? 'bg-stone-200 text-stone-700' : 'bg-emerald-100 text-emerald-900'}`}>
-                        {product.active === false ? 'Unavailable' : 'Available'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {products.map((product) => {
+                  const availability = availabilityPresentation[product.availability_state] ?? availabilityPresentation.unknown;
+                  return (
+                    <tr key={product.id}>
+                      <td className="font-bold text-emerald-950">{product.name || 'Unnamed product'}</td>
+                      <td>{formatMoney(product.price)}</td>
+                      <td>{product.unit || '—'}</td>
+                      <td>
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${availability.classes}`}>
+                          {availability.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
