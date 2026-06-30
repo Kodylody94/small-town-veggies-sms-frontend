@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { EmptyState, ErrorState, LoadingState, PageHeader } from '../components/Ui';
+import { formatDate } from '../utils';
+
+function phoneLink(phone) {
+  const digits = String(phone ?? '').replace(/\D/g, '');
+  return digits.length >= 10 ? `tel:${digits}` : null;
+}
 
 export default function Customers() {
   const [customers, setCustomers] = useState([]);
@@ -39,7 +45,7 @@ export default function Customers() {
   }, []);
 
   if (loading) return <LoadingState label="Loading customers" />;
-  if (error) return <ErrorState error={error} onRetry={load} />;
+  if (error) return <ErrorState error={error} onRetry={load} title="Could not load customers" />;
 
   return (
     <>
@@ -53,6 +59,7 @@ export default function Customers() {
       ) : (
         <div className="table-shell">
           <table className="data-table">
+            <caption className="sr-only">Customers and recorded messaging consent</caption>
             <thead>
               <tr>
                 <th>Name</th>
@@ -62,18 +69,23 @@ export default function Customers() {
               </tr>
             </thead>
             <tbody>
-              {customers.map((customer) => (
-                <tr key={customer.id}>
-                  <td className="font-bold text-emerald-950">{customer.name || 'Unknown'}</td>
-                  <td>{customer.phone}</td>
-                  <td>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${customer.opted_in ? 'bg-emerald-100 text-emerald-900' : 'bg-red-100 text-red-900'}`}>
-                      {customer.opted_in ? 'Opted in' : 'Opted out'}
-                    </span>
-                  </td>
-                  <td>{new Date(customer.created_at).toLocaleDateString('en-US')}</td>
-                </tr>
-              ))}
+              {customers.map((customer) => {
+                const href = phoneLink(customer.phone);
+                return (
+                  <tr key={customer.id}>
+                    <td className="font-bold text-emerald-950">{customer.name || 'Unknown'}</td>
+                    <td>
+                      {href ? <a className="font-medium text-emerald-800 underline-offset-2 hover:underline" href={href}>{customer.phone}</a> : (customer.phone || '—')}
+                    </td>
+                    <td>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${customer.opted_in ? 'bg-emerald-100 text-emerald-900' : 'bg-red-100 text-red-900'}`}>
+                        {customer.opted_in ? 'Opted in' : 'Opted out'}
+                      </span>
+                    </td>
+                    <td>{formatDate(customer.created_at)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
