@@ -33,7 +33,7 @@ jobs:
       - name: Commit dependency lock
         if: github.event_name == 'pull_request'
         run: |
-          if git diff --quiet -- package-lock.json; then
+          if [ -z "$(git status --porcelain -- package-lock.json)" ]; then
             exit 0
           fi
           git config user.name "github-actions[bot]"
