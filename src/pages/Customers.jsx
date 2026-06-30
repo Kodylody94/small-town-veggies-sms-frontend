@@ -3,6 +3,12 @@ import { api } from '../api';
 import { EmptyState, ErrorState, LoadingState, PageHeader } from '../components/Ui';
 import { formatDate } from '../utils';
 
+const consentPresentation = {
+  opted_in: { label: 'Opted in', classes: 'bg-emerald-100 text-emerald-900' },
+  opted_out: { label: 'Opted out', classes: 'bg-red-100 text-red-900' },
+  unknown: { label: 'Unknown — do not message', classes: 'bg-amber-100 text-amber-950' },
+};
+
 function phoneLink(phone) {
   const digits = String(phone ?? '').replace(/\D/g, '');
   return digits.length >= 10 ? `tel:${digits}` : null;
@@ -52,7 +58,7 @@ export default function Customers() {
       <PageHeader
         eyebrow="Audience"
         title="Customers"
-        description="Review who can receive order updates and promotional messages."
+        description="Review who can receive order updates and promotional messages. Unknown consent is treated as not authorized."
       />
       {customers.length === 0 ? (
         <EmptyState title="No customers yet" message="Customers will appear after they opt in or place an order." />
@@ -71,6 +77,7 @@ export default function Customers() {
             <tbody>
               {customers.map((customer) => {
                 const href = phoneLink(customer.phone);
+                const consent = consentPresentation[customer.consent_state] ?? consentPresentation.unknown;
                 return (
                   <tr key={customer.id}>
                     <td className="font-bold text-emerald-950">{customer.name || 'Unknown'}</td>
@@ -78,8 +85,8 @@ export default function Customers() {
                       {href ? <a className="font-medium text-emerald-800 underline-offset-2 hover:underline" href={href}>{customer.phone}</a> : (customer.phone || '—')}
                     </td>
                     <td>
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${customer.opted_in ? 'bg-emerald-100 text-emerald-900' : 'bg-red-100 text-red-900'}`}>
-                        {customer.opted_in ? 'Opted in' : 'Opted out'}
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${consent.classes}`}>
+                        {consent.label}
                       </span>
                     </td>
                     <td>{formatDate(customer.created_at)}</td>
