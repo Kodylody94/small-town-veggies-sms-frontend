@@ -50,7 +50,7 @@ export default function Dashboard() {
     { label: 'Total orders', value: summary.total, icon: ClipboardList },
     { label: 'Pending', value: summary.pending, icon: Clock3 },
     { label: 'Customers', value: state.customers.length, icon: Users },
-    { label: 'Active products', value: state.products.filter((product) => product.active !== false).length, icon: PackageOpen },
+    { label: 'Active products', value: state.products.filter((product) => product.active === true).length, icon: PackageOpen },
   ];
 
   return (
