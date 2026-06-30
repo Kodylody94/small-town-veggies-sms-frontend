@@ -28,7 +28,11 @@ export function StatusBadge({ status }) {
 
 export function LoadingState({ label = 'Loading data' }) {
   return (
-    <div className="panel flex min-h-44 items-center justify-center gap-3 text-stone-600" role="status">
+    <div
+      className="panel flex min-h-44 items-center justify-center gap-3 text-stone-600"
+      role="status"
+      aria-live="polite"
+    >
       <LoaderCircle className="animate-spin" aria-hidden="true" />
       {label}…
     </div>
@@ -45,13 +49,13 @@ export function EmptyState({ title = 'Nothing here yet', message }) {
   );
 }
 
-export function ErrorState({ error, onRetry }) {
+export function ErrorState({ error, onRetry, title = 'Could not load this page' }) {
   return (
     <div className="panel border-red-200 bg-red-50" role="alert">
       <div className="flex gap-3">
         <AlertTriangle className="mt-0.5 shrink-0 text-red-700" aria-hidden="true" />
         <div>
-          <h2 className="font-bold text-red-950">Could not load this page</h2>
+          <h2 className="font-bold text-red-950">{title}</h2>
           <p className="mt-1 text-sm text-red-800">{error?.message || 'An unexpected error occurred.'}</p>
           {onRetry && (
             <button type="button" className="button-secondary mt-4" onClick={onRetry}>
