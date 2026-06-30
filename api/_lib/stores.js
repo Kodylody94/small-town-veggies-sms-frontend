@@ -1,5 +1,45 @@
 import { ApiError } from './errors.js';
 
+export class MemorySessionStore {
+  constructor({ now = () => Date.now() } = {}) {
+    this.now = now;
+    this.sessions = new Map();
+  }
+
+  async create(session) {
+    this.sessions.set(session.id, structuredClone(session));
+  }
+
+  async requireActive(id) {
+    const session = this.sessions.get(id);
+    if (!session || session.revokedAt || session.expiresAt <= this.now()) {
+      throw new ApiError(401, 'SESSION_REVOKED', 'The administrator session is no longer active.');
+    }
+    return structuredClone(session);
+  }
+
+  async revoke(id) {
+    const session = this.sessions.get(id);
+    if (session) session.revokedAt = this.now();
+  }
+}
+
+export class UnconfiguredSessionStore {
+  async create() {
+    throw new ApiError(503, 'SESSION_STORE_NOT_CONFIGURED', 'A durable session store is required.', {
+      expose: false,
+    });
+  }
+
+  async requireActive() {
+    return this.create();
+  }
+
+  async revoke() {
+    return this.create();
+  }
+}
+
 export class MemoryRateLimiter {
   constructor({ limit = 10, windowMs = 60_000, now = () => Date.now() } = {}) {
     this.limit = limit;
