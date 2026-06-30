@@ -78,7 +78,7 @@ test('renders protected read-only data and sorts recent orders by timestamp', as
   await expect(firstRecentOrder).toContainText('Newest Order');
 
   await page.goto('/orders');
-  await expect(page.getByRole('button', { name: 'Confirm' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Confirm', exact: true })).toBeDisabled();
 });
 
 test('fails closed for ambiguous consent and product availability', async ({ page }) => {
@@ -120,7 +120,7 @@ test('contains mobile navigation focus and restores it after closing', async ({ 
 
   const navigation = page.getByRole('dialog', { name: 'Primary navigation' });
   await expect(navigation).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Close navigation' })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Close navigation', exact: true })).toBeFocused();
 
   const contentIsInert = await page.locator('main').evaluate((element) => element.parentElement.inert);
   expect(contentIsInert).toBe(true);
