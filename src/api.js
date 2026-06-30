@@ -37,13 +37,13 @@ async function parseResponse(response) {
 
   const contentType = response.headers.get('content-type') ?? '';
   const isJson = contentType.includes('application/json');
-  let payload = null;
+  let payload;
 
   if (isJson) {
     try {
       payload = await response.json();
-    } catch {
-      throw new Error('The backend returned invalid JSON.');
+    } catch (error) {
+      throw new Error('The backend returned invalid JSON.', { cause: error });
     }
   } else {
     const text = await response.text();
@@ -103,10 +103,10 @@ async function request(path, options = {}) {
     return await parseResponse(response);
   } catch (error) {
     if (error?.name === 'AbortError') {
-      throw new Error('The backend did not respond within 15 seconds.');
+      throw new Error('The backend did not respond within 15 seconds.', { cause: error });
     }
     if (error instanceof Error) throw error;
-    throw new Error('An unexpected network error occurred.');
+    throw new Error('An unexpected network error occurred.', { cause: error });
   } finally {
     window.clearTimeout(timeoutId);
   }
