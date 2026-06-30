@@ -20,8 +20,10 @@ jobs:
     env:
       CI: true
     steps:
-      - name: Check out repository
+      - name: Check out feature branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -29,7 +31,7 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Commit dependency lock
-        if: github.event_name == 'push' && github.ref_name == 'build/frontend-foundation'
+        if: github.event_name == 'pull_request'
         run: |
           if git diff --quiet -- package-lock.json; then
             exit 0
@@ -38,31 +40,10 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package-lock.json
           git commit -m "Add reproducible dependency lock"
-          git push origin HEAD:build/frontend-foundation
+          git push origin HEAD:${{ github.head_ref }}
       - name: Lint
-        id: lint
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          npm run lint 2>&1 | tee lint.log
+        run: npm run lint
       - name: Test
-        id: test
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          npm test 2>&1 | tee test.log
-      - name: Preserve diagnostic output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: verification-output
-          path: |
-            lint.log
-            test.log
-          if-no-files-found: error
-          retention-days: 1
+        run: npm test
       - name: Build
         run: npm run build
-      - name: Fail on verification errors
-        if: steps.lint.outcome == 'failure' || steps.test.outcome == 'failure'
-        run: exit 1
