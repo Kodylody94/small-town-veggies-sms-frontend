@@ -116,6 +116,12 @@ test('contains mobile navigation focus and restores it after closing', async ({ 
   await page.goto('/');
 
   const openButton = page.getByRole('button', { name: 'Open navigation' });
+  const firstNavigationLink = page.locator('#primary-navigation a').first();
+
+  await expect(firstNavigationLink).toBeHidden();
+  await page.keyboard.press('Tab');
+  await expect(openButton).toBeFocused();
+
   await openButton.click();
 
   const navigation = page.getByRole('dialog', { name: 'Primary navigation' });
@@ -129,6 +135,7 @@ test('contains mobile navigation focus and restores it after closing', async ({ 
   await expect(page.getByRole('link', { name: 'Reminders' })).toBeFocused();
 
   await page.keyboard.press('Escape');
+  await expect(firstNavigationLink).toBeHidden();
   await expect(openButton).toBeFocused();
 
   const contentIsInteractive = await page.locator('main').evaluate((element) => !element.parentElement.inert);
