@@ -20,9 +20,11 @@ import {
   ConsoleAuditStore,
   MemoryIdempotencyStore,
   MemoryRateLimiter,
+  MemorySessionStore,
   UnconfiguredIdempotencyStore,
   UnconfiguredRateLimiter,
   UnconfiguredRepository,
+  UnconfiguredSessionStore,
 } from './stores.js';
 import { validateIdempotencyKey, validateLogin, validateProduct } from './validation.js';
 
@@ -37,9 +39,11 @@ function requireMethod(request, expected) {
   }
 }
 
-function requireSession(request, config, now) {
+async function requireSession(request, config, now, sessionStore) {
   const cookies = parseCookies(getHeader(request, 'cookie'));
-  return verifySessionToken(cookies[SESSION_COOKIE_NAME], config.sessionSecret, now());
+  const payload = verifySessionToken(cookies[SESSION_COOKIE_NAME], config.sessionSecret, now());
+  await sessionStore.requireActive(payload.sid);
+  return payload;
 }
 
 async function audit(store, entry) {
@@ -68,6 +72,9 @@ export function createRuntimeDependencies(env = process.env) {
   return {
     getConfig: () => readConfig(env),
     repository: new UnconfiguredRepository(),
+    sessionStore: productionRuntime
+      ? new UnconfiguredSessionStore()
+      : new MemorySessionStore(),
     rateLimiter: productionRuntime ? new UnconfiguredRateLimiter() : new MemoryRateLimiter(),
     idempotencyStore: productionRuntime
       ? new UnconfiguredIdempotencyStore()
@@ -81,6 +88,7 @@ export function createBackendHandler(dependencies) {
   const deps = {
     now: () => Date.now(),
     auditStore: new ConsoleAuditStore(),
+    sessionStore: new UnconfiguredSessionStore(),
     ...dependencies,
   };
 
@@ -107,6 +115,7 @@ export function createBackendHandler(dependencies) {
             status: 'ok',
             configured,
             database: 'not_connected',
+            session_store: 'not_connected',
             live_mutations: false,
             messaging: 'disabled',
           },
@@ -141,6 +150,13 @@ export function createBackendHandler(dependencies) {
           ttlSeconds: config.sessionTtlSeconds,
           now: deps.now(),
         });
+        await deps.sessionStore.create({
+          id: created.payload.sid,
+          subject: created.payload.sub,
+          createdAt: created.payload.iat * 1000,
+          expiresAt: created.payload.exp * 1000,
+          revokedAt: null,
+        });
         setHeader(response, 'Set-Cookie', sessionCookie(created.token, config));
         await audit(deps.auditStore, {
           request_id: requestId,
@@ -160,7 +176,7 @@ export function createBackendHandler(dependencies) {
 
       if (path === '/auth/session') {
         requireMethod(request, 'GET');
-        session = requireSession(request, config, deps.now);
+        session = await requireSession(request, config, deps.now, deps.sessionStore);
         return sendJson(response, 200, {
           data: {
             authenticated: true,
@@ -172,8 +188,9 @@ export function createBackendHandler(dependencies) {
 
       if (path === '/auth/logout') {
         requireMethod(request, 'POST');
-        session = requireSession(request, config, deps.now);
+        session = await requireSession(request, config, deps.now, deps.sessionStore);
         requireMutationSecurity(request, config, { csrfToken: session.csrf });
+        await deps.sessionStore.revoke(session.sid);
         setHeader(response, 'Set-Cookie', expiredSessionCookie(config));
         await audit(deps.auditStore, {
           request_id: requestId,
@@ -185,7 +202,7 @@ export function createBackendHandler(dependencies) {
         return sendJson(response, 200, { data: { authenticated: false } });
       }
 
-      session = requireSession(request, config, deps.now);
+      session = await requireSession(request, config, deps.now, deps.sessionStore);
 
       if (path === '/orders' && method === 'GET') {
         return sendJson(response, 200, collection(await deps.repository.listOrders()));
