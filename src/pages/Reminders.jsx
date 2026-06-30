@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { BellRing } from 'lucide-react';
 import { api } from '../api';
 import { EmptyState, ErrorState, LoadingState, PageHeader, StatusBadge } from '../components/Ui';
+import { pruneSelectedOrderIds } from '../utils';
 
 const pickupDays = ['All', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -45,6 +46,13 @@ export default function Reminders() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    setSelected((current) => {
+      const next = pruneSelectedOrderIds(current, orders);
+      return next.size === current.size ? current : next;
+    });
+  }, [orders]);
 
   const visible = useMemo(
     () => (day === 'All' ? orders : orders.filter((order) => order.pickup_day === day)),
