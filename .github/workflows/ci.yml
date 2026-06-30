@@ -45,18 +45,24 @@ jobs:
         run: |
           set -o pipefail
           npm run lint 2>&1 | tee lint.log
-      - name: Preserve lint output
+      - name: Test
+        id: test
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test.log
+      - name: Preserve diagnostic output
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: lint-output
-          path: lint.log
+          name: verification-output
+          path: |
+            lint.log
+            test.log
           if-no-files-found: error
           retention-days: 1
-      - name: Test
-        run: npm test
       - name: Build
         run: npm run build
-      - name: Fail on lint errors
-        if: steps.lint.outcome == 'failure'
+      - name: Fail on verification errors
+        if: steps.lint.outcome == 'failure' || steps.test.outcome == 'failure'
         run: exit 1
