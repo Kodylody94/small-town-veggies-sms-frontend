@@ -4,6 +4,7 @@ import {
   formatDate,
   formatMoney,
   formatStatus,
+  pruneSelectedOrderIds,
   recentOrders,
   summarizeOrders,
 } from '../utils';
@@ -27,9 +28,20 @@ describe('dashboard utilities', () => {
     expect(filterOrders(undefined, 'all')).toEqual([]);
   });
 
-  it('sorts recent orders without mutating the source array', () => {
+  it('sorts recent orders by timestamp and falls back to IDs without mutation', () => {
+    const timestamped = [
+      { id: 99, created_at: '2026-06-01T10:00:00Z' },
+      { id: 2, created_at: '2026-06-30T10:00:00Z' },
+      { id: 50, created_at: '2026-06-15T10:00:00Z' },
+    ];
+
+    expect(recentOrders(timestamped, 2).map((order) => order.id)).toEqual([2, 50]);
     expect(recentOrders(orders, 2).map((order) => order.id)).toEqual([4, 3]);
     expect(orders.map((order) => order.id)).toEqual([1, 3, 2, 4]);
+  });
+
+  it('removes selected reminder IDs that are no longer eligible', () => {
+    expect([...pruneSelectedOrderIds(new Set([1, 3, 8]), [{ id: 1 }, { id: 8 }])]).toEqual([1, 8]);
   });
 
   it('formats valid display values', () => {
