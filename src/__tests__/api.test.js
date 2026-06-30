@@ -11,8 +11,8 @@ describe('API safety defaults', () => {
     expect(await api.getOrders()).toHaveLength(originalLength);
   });
 
-  it('blocks mutations unless the explicit live mutation gate is enabled', async () => {
+  it('blocks mutations unless the explicit live mutation gate is enabled', () => {
     expect(liveMutationsEnabled).toBe(false);
-    await expect(api.confirmOrder(1042)).rejects.toThrow(/disabled|locked/i);
+    expect(() => api.confirmOrder(1042)).toThrow(/disabled|locked/i);
   });
 });
