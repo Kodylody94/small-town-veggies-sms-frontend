@@ -1,22 +1,122 @@
 openapi: 3.1.0
 info:
   title: Small Town Veggies Dashboard API
-  version: 0.1.0-draft
+  version: 0.2.0-draft
   description: >-
-    Draft contract for the protected Small Town Veggies operations dashboard.
-    Live mutations and customer messaging must remain disabled until the
-    production acceptance gates in docs/API_CONTRACT.md are satisfied.
+    Protected dashboard API foundation. Production storage adapters, live
+    mutations, and customer messaging remain disabled until separately approved.
 servers:
-  - url: https://your-backend.example.com
-    description: Replace with the reviewed protected backend origin.
+  - url: /
+    description: Same-origin Vercel deployment.
 security:
   - administratorSession: []
 tags:
+  - name: System
+  - name: Authentication
   - name: Orders
   - name: Customers
   - name: Products
   - name: Messaging
 paths:
+  /api/health:
+    get:
+      tags: [System]
+      summary: Read non-secret backend readiness state
+      security: []
+      responses:
+        '200':
+          description: Backend process is reachable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /api/auth/login:
+    post:
+      tags: [Authentication]
+      summary: Create a revocable administrator session
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/MutationMarker'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  minLength: 1
+                  maxLength: 512
+      responses:
+        '200':
+          description: Session cookie created and CSRF token returned.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/auth/session:
+    get:
+      tags: [Authentication]
+      summary: Validate the current administrator session
+      responses:
+        '200':
+          description: Active session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Revoke the current administrator session
+      parameters:
+        - $ref: '#/components/parameters/MutationMarker'
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: Session revoked and cookie expired.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: false
+                    required: [authenticated]
+                    properties:
+                      authenticated:
+                        type: boolean
+                        const: false
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /api/orders:
     get:
       tags: [Orders]
@@ -33,8 +133,8 @@ paths:
                 $ref: '#/components/schemas/OrderCollection'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /api/orders/{id}/confirm:
     post:
       tags: [Orders]
@@ -42,6 +142,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/OrderId'
         - $ref: '#/components/parameters/MutationMarker'
+        - $ref: '#/components/parameters/CsrfToken'
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
@@ -56,6 +157,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /api/orders/{id}/ready:
     post:
       tags: [Orders]
@@ -63,6 +166,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/OrderId'
         - $ref: '#/components/parameters/MutationMarker'
+        - $ref: '#/components/parameters/CsrfToken'
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
@@ -77,6 +181,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /api/orders/{id}/pickup:
     post:
       tags: [Orders]
@@ -84,6 +190,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/OrderId'
         - $ref: '#/components/parameters/MutationMarker'
+        - $ref: '#/components/parameters/CsrfToken'
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
@@ -98,6 +205,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /api/customers:
     get:
       tags: [Customers]
@@ -114,8 +223,8 @@ paths:
                 $ref: '#/components/schemas/CustomerCollection'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /api/products:
     get:
       tags: [Products]
@@ -132,13 +241,14 @@ paths:
                 $ref: '#/components/schemas/ProductCollection'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
     post:
       tags: [Products]
       summary: Create a product
       parameters:
         - $ref: '#/components/parameters/MutationMarker'
+        - $ref: '#/components/parameters/CsrfToken'
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
@@ -163,77 +273,37 @@ paths:
           $ref: '#/components/responses/ValidationFailed'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /api/broadcasts:
     post:
       tags: [Messaging]
-      summary: Submit an opted-in customer broadcast
-      description: Disabled until the protected messaging acceptance gates pass.
-      x-production-gate: disabled
+      summary: Customer broadcast endpoint
+      description: Always disabled in this foundation stage.
       parameters:
         - $ref: '#/components/parameters/MutationMarker'
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BroadcastRequest'
+        - $ref: '#/components/parameters/CsrfToken'
       responses:
-        '202':
-          description: Broadcast accepted for protected server-side processing.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageJobResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '422':
-          $ref: '#/components/responses/ValidationFailed'
-        '429':
-          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/MessagingDisabled'
   /api/reminders:
     post:
       tags: [Messaging]
-      summary: Submit pickup reminders for eligible orders
-      description: Disabled until the protected messaging acceptance gates pass.
-      x-production-gate: disabled
+      summary: Pickup reminder endpoint
+      description: Always disabled in this foundation stage.
       parameters:
         - $ref: '#/components/parameters/MutationMarker'
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ReminderRequest'
+        - $ref: '#/components/parameters/CsrfToken'
       responses:
-        '202':
-          description: Reminder job accepted for protected server-side processing.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MessageJobResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '409':
-          $ref: '#/components/responses/Conflict'
-        '422':
-          $ref: '#/components/responses/ValidationFailed'
-        '429':
-          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/MessagingDisabled'
 components:
   securitySchemes:
     administratorSession:
       type: apiKey
       in: cookie
       name: stv_admin_session
-      description: Secure HttpOnly administrator session cookie.
+      description: Signed HttpOnly cookie backed by a revocable server-side session.
   parameters:
     OrderId:
       name: id
@@ -267,16 +337,24 @@ components:
       schema:
         type: string
         const: dashboard
-      description: Non-secret custom header used with origin and CSRF protections.
+      description: Non-secret browser preflight marker.
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 20
+      description: Token bound to the active administrator session.
     IdempotencyKey:
       name: Idempotency-Key
       in: header
-      required: false
+      required: true
       schema:
         type: string
         minLength: 16
         maxLength: 200
-      description: Must become required before production live mutations are enabled.
+      description: Unique key that makes business mutations replay safe.
   responses:
     OrderMutationSuccess:
       description: Updated order.
@@ -285,13 +363,13 @@ components:
           schema:
             $ref: '#/components/schemas/OrderResponse'
     Unauthorized:
-      description: No valid administrator session.
+      description: No active administrator session.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     Forbidden:
-      description: Authenticated administrator lacks permission.
+      description: Origin, Fetch Metadata, mutation marker, CSRF, or authorization check failed.
       content:
         application/json:
           schema:
@@ -303,7 +381,7 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     Conflict:
-      description: Invalid state transition, duplicate operation, or idempotency conflict.
+      description: Invalid state transition or idempotency conflict.
       content:
         application/json:
           schema:
@@ -316,11 +394,18 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     RateLimited:
       description: Request rate limit exceeded.
-      headers:
-        Retry-After:
+      content:
+        application/json:
           schema:
-            type: integer
-            minimum: 1
+            $ref: '#/components/schemas/ErrorResponse'
+    ServiceUnavailable:
+      description: A required durable production adapter is not connected.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    MessagingDisabled:
+      description: Customer messaging remains disconnected.
       content:
         application/json:
           schema:
@@ -331,6 +416,52 @@ components:
         - type: integer
         - type: string
           minLength: 1
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [status, configured, database, session_store, live_mutations, messaging]
+          properties:
+            status:
+              type: string
+              const: ok
+            configured:
+              type: boolean
+            database:
+              type: string
+              const: not_connected
+            session_store:
+              type: string
+              const: not_connected
+            live_mutations:
+              type: boolean
+              const: false
+            messaging:
+              type: string
+              const: disabled
+    SessionResponse:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [authenticated, csrf_token, expires_at]
+          properties:
+            authenticated:
+              type: boolean
+              const: true
+            csrf_token:
+              type: string
+              minLength: 20
+            expires_at:
+              type: string
+              format: date-time
     OrderStatus:
       type: string
       enum: [pending, confirmed, ready, picked_up]
@@ -426,31 +557,10 @@ components:
           type: string
           minLength: 1
           maxLength: 40
-    BroadcastRequest:
-      type: object
-      additionalProperties: false
-      required: [message]
-      properties:
-        message:
-          type: string
-          minLength: 1
-          maxLength: 320
-    ReminderRequest:
-      type: object
-      additionalProperties: false
-      required: [order_ids]
-      properties:
-        order_ids:
-          type: array
-          minItems: 1
-          maxItems: 100
-          uniqueItems: true
-          items:
-            $ref: '#/components/schemas/Identifier'
     ErrorResponse:
       type: object
       additionalProperties: false
-      required: [message, code]
+      required: [message, code, request_id]
       properties:
         message:
           type: string
@@ -466,6 +576,7 @@ components:
             type: string
         request_id:
           type: string
+          format: uuid
     PageMeta:
       type: object
       additionalProperties: false
@@ -526,19 +637,3 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/Product'
-    MessageJobResponse:
-      type: object
-      additionalProperties: false
-      required: [data]
-      properties:
-        data:
-          type: object
-          additionalProperties: false
-          required: [job_id, accepted_count]
-          properties:
-            job_id:
-              type: string
-              minLength: 1
-            accepted_count:
-              type: integer
-              minimum: 0
