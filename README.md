@@ -32,6 +32,15 @@ For protected live read-only data, set `VITE_ENABLE_DEMO_DATA=false` and keep mu
 
 The API client sends cookies with `credentials: include`, applies a 15-second timeout, validates collection and record shapes, avoids unnecessary JSON preflights on GET requests, and rejects malformed response bodies.
 
+## Formal API contract
+
+The frontend/backend agreement is versioned in:
+
+- [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md) — human-readable security, schema, error, workflow, consent, and acceptance requirements
+- [`docs/openapi.yaml`](docs/openapi.yaml) — machine-readable OpenAPI 3.1 contract
+
+The contract remains a draft until the protected backend and staging acceptance gates are demonstrated.
+
 ## Data contract
 
 Collection routes may return a raw array or an envelope shaped like `{ "data": [...] }`. Every record must be an object with a non-empty string or numeric `id`.
@@ -89,11 +98,25 @@ The frontend mutation flag is only an interface safety lock. It is not authentic
 npm run lint
 npm test
 npm run build
+npm run test:e2e
 ```
 
-GitHub Actions runs all three checks with cancellation for superseded runs and a ten-minute job timeout. The committed dependency lock is installed with `npm ci`.
+The application dependency graph remains reproducible through `npm ci` and the committed lockfile. The browser command pins `@playwright/test` to version `1.55.0`; GitHub Actions installs the matching Chromium runtime before executing the suite.
 
-The current tests cover formatting and validation utilities, strict API record contracts, timestamp-based ordering, stale reminder-selection pruning, defensive demo copies, mutation locking, and mutation request headers. Browser-level route, keyboard, API-error, and end-to-end tests are still required before production activation.
+Current automated coverage includes:
+
+- Formatting and product validation utilities
+- Strict API record contracts
+- Timestamp-based order ordering
+- Stale reminder-selection pruning
+- Defensive demo copies and mutation locks
+- Mutation request headers
+- Live read-only dashboard rendering
+- Fail-closed customer consent and product availability in a real browser
+- Normalized authorization-error presentation
+- Mobile navigation focus containment, inert background behavior, and focus restoration
+
+GitHub Actions runs the locked application checks first, followed by the Chromium browser suite. Browser traces, screenshots, and the HTML report are retained as short-lived artifacts when the browser job fails.
 
 ## Vercel deployment
 
