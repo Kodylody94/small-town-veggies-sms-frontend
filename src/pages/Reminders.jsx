@@ -6,6 +6,10 @@ import { pruneSelectedOrderIds } from '../utils';
 
 const pickupDays = ['All', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+function eligibleReminderOrders(orders) {
+  return orders.filter((order) => ['confirmed', 'ready'].includes(order.status));
+}
+
 export default function Reminders() {
   const [orders, setOrders] = useState([]);
   const [day, setDay] = useState('All');
@@ -13,12 +17,16 @@ export default function Reminders() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const replaceOrders = (nextOrders) => {
+    setOrders(nextOrders);
+    setSelected((current) => pruneSelectedOrderIds(current, nextOrders));
+  };
+
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const result = await api.getOrders();
-      setOrders(result.filter((order) => ['confirmed', 'ready'].includes(order.status)));
+      replaceOrders(eligibleReminderOrders(await api.getOrders()));
     } catch (loadError) {
       setError(loadError);
     } finally {
@@ -32,7 +40,9 @@ export default function Reminders() {
     api.getOrders()
       .then((result) => {
         if (active) {
-          setOrders(result.filter((order) => ['confirmed', 'ready'].includes(order.status)));
+          const nextOrders = eligibleReminderOrders(result);
+          setOrders(nextOrders);
+          setSelected((current) => pruneSelectedOrderIds(current, nextOrders));
         }
       })
       .catch((loadError) => {
@@ -46,13 +56,6 @@ export default function Reminders() {
       active = false;
     };
   }, []);
-
-  useEffect(() => {
-    setSelected((current) => {
-      const next = pruneSelectedOrderIds(current, orders);
-      return next.size === current.size ? current : next;
-    });
-  }, [orders]);
 
   const visible = useMemo(
     () => (day === 'All' ? orders : orders.filter((order) => order.pickup_day === day)),
