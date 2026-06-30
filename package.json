@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "vitest run src/__tests__",
-    "test:e2e": "npx --yes @playwright/test@1.55.0 test"
+    "test:e2e": "bash scripts/run-playwright.sh"
   },
   "dependencies": {
     "lucide-react": "1.22.0",
