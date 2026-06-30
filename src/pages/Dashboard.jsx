@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ClipboardList, Clock3, PackageOpen, Users } from 'lucide-react';
 import { api } from '../api';
-import { ErrorState, LoadingState, PageHeader, StatusBadge } from '../components/Ui';
-import { formatMoney, summarizeOrders } from '../utils';
+import { EmptyState, ErrorState, LoadingState, PageHeader, StatusBadge } from '../components/Ui';
+import { formatMoney, recentOrders, summarizeOrders } from '../utils';
 
 export default function Dashboard() {
   const [state, setState] = useState({ loading: true, error: null, orders: [], customers: [], products: [] });
@@ -45,6 +45,7 @@ export default function Dashboard() {
   if (state.error) return <ErrorState error={state.error} onRetry={load} />;
 
   const summary = summarizeOrders(state.orders);
+  const latestOrders = recentOrders(state.orders);
   const cards = [
     { label: 'Total orders', value: summary.total, icon: ClipboardList },
     { label: 'Pending', value: summary.pending, icon: Clock3 },
@@ -79,30 +80,36 @@ export default function Dashboard() {
           <h2 className="text-xl font-black text-emerald-950">Recent orders</h2>
           <p className="text-sm text-stone-500">Newest five</p>
         </div>
-        <div className="table-shell">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Order</th>
-                <th>Customer</th>
-                <th>Pickup</th>
-                <th>Total</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {state.orders.slice(0, 5).map((order) => (
-                <tr key={order.id}>
-                  <td className="font-bold text-emerald-950">#{order.id}</td>
-                  <td>{order.customer_name}</td>
-                  <td>{order.pickup_day}</td>
-                  <td>{formatMoney(order.total)}</td>
-                  <td><StatusBadge status={order.status} /></td>
+
+        {latestOrders.length === 0 ? (
+          <EmptyState title="No orders yet" message="New orders will appear here after they are received." />
+        ) : (
+          <div className="table-shell">
+            <table className="data-table">
+              <caption className="sr-only">Five newest orders</caption>
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Customer</th>
+                  <th>Pickup</th>
+                  <th>Total</th>
+                  <th>Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {latestOrders.map((order) => (
+                  <tr key={order.id}>
+                    <td className="font-bold text-emerald-950">#{order.id}</td>
+                    <td>{order.customer_name || 'Unknown'}</td>
+                    <td>{order.pickup_day || '—'}</td>
+                    <td>{formatMoney(order.total)}</td>
+                    <td><StatusBadge status={order.status} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </>
   );
