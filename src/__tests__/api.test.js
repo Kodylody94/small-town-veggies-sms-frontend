@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   api,
   buildRequestHeaders,
+  createIdempotencyKey,
+  CSRF_HEADER,
+  IDEMPOTENCY_HEADER,
   isDemoMode,
   liveMutationsEnabled,
   MUTATION_REQUEST_HEADER,
@@ -22,11 +25,26 @@ describe('API safety defaults', () => {
     expect(() => api.confirmOrder(1042)).toThrow(/disabled|locked/i);
   });
 
-  it('marks JSON mutations with the required preflight header', () => {
-    const headers = buildRequestHeaders({ body: '{}' }, true);
+  it('marks protected mutations with preflight, CSRF, and idempotency headers', () => {
+    const headers = buildRequestHeaders(
+      { body: '{}' },
+      true,
+      { csrfToken: 'csrf-token', idempotencyKey: '1234567890abcdef' },
+    );
 
     expect(headers.get('Accept')).toBe('application/json');
     expect(headers.get('Content-Type')).toBe('application/json');
     expect(headers.get(MUTATION_REQUEST_HEADER)).toBe('dashboard');
+    expect(headers.get(CSRF_HEADER)).toBe('csrf-token');
+    expect(headers.get(IDEMPOTENCY_HEADER)).toBe('1234567890abcdef');
+  });
+
+  it('creates unique idempotency keys long enough for the backend contract', () => {
+    const first = createIdempotencyKey();
+    const second = createIdempotencyKey();
+
+    expect(first.length).toBeGreaterThanOrEqual(16);
+    expect(second.length).toBeGreaterThanOrEqual(16);
+    expect(first).not.toBe(second);
   });
 });
