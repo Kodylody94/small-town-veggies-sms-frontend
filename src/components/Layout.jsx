@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   BellRing,
@@ -22,23 +22,67 @@ const navigation = [
   { to: '/reminders', label: 'Reminders', icon: BellRing },
 ];
 
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
 export default function Layout() {
   const [open, setOpen] = useState(false);
+  const navigationRef = useRef(null);
+  const closeButtonRef = useRef(null);
+  const menuButtonRef = useRef(null);
+  const contentRef = useRef(null);
 
   useEffect(() => {
     if (!open) return undefined;
 
     const previousOverflow = document.body.style.overflow;
-    const closeOnEscape = (event) => {
-      if (event.key === 'Escape') setOpen(false);
+    const previouslyFocused = document.activeElement;
+    const content = contentRef.current;
+    if (content) content.inert = true;
+    document.body.style.overflow = 'hidden';
+
+    const focusFrame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setOpen(false);
+        return;
+      }
+
+      if (event.key !== 'Tab') return;
+      const focusable = [...(navigationRef.current?.querySelectorAll(FOCUSABLE_SELECTOR) ?? [])]
+        .filter((element) => element.offsetParent !== null);
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
 
-    document.body.style.overflow = 'hidden';
-    window.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('keydown', handleKeyDown);
 
     return () => {
+      window.cancelAnimationFrame(focusFrame);
       document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('keydown', handleKeyDown);
+      if (content) content.inert = false;
+      if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
+      else menuButtonRef.current?.focus();
     };
   }, [open]);
 
@@ -46,6 +90,10 @@ export default function Layout() {
     <div className="min-h-screen lg:grid lg:grid-cols-[17rem_1fr]">
       <aside
         id="primary-navigation"
+        ref={navigationRef}
+        role={open ? 'dialog' : undefined}
+        aria-modal={open ? 'true' : undefined}
+        aria-label="Primary navigation"
         className={`${open ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-40 w-72 bg-emerald-950 text-white transition-transform lg:static lg:w-auto lg:translate-x-0`}
       >
         <div className="flex h-full flex-col">
@@ -60,6 +108,7 @@ export default function Layout() {
               </div>
             </div>
             <button
+              ref={closeButtonRef}
               type="button"
               className="rounded-lg p-2 text-emerald-100 hover:bg-white/10 lg:hidden"
               onClick={() => setOpen(false)}
@@ -69,7 +118,7 @@ export default function Layout() {
             </button>
           </div>
 
-          <nav className="flex-1 space-y-1 p-4" aria-label="Primary navigation">
+          <nav className="flex-1 space-y-1 p-4" aria-label="Primary navigation links">
             {navigation.map(({ to, label, icon: Icon, end }) => (
               <NavLink
                 key={to}
@@ -102,12 +151,14 @@ export default function Layout() {
           className="fixed inset-0 z-30 bg-black/40 lg:hidden"
           onClick={() => setOpen(false)}
           aria-label="Close navigation overlay"
+          tabIndex={-1}
         />
       )}
 
-      <div className="min-w-0">
+      <div ref={contentRef} className="min-w-0">
         <header className="sticky top-0 z-20 flex min-h-16 items-center gap-3 border-b border-stone-200 bg-[#f4f1e8]/95 px-4 backdrop-blur md:px-7">
           <button
+            ref={menuButtonRef}
             type="button"
             className="rounded-xl border border-stone-300 bg-white p-2.5 text-stone-800 lg:hidden"
             onClick={() => setOpen(true)}
