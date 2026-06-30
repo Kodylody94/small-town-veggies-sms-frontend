@@ -1,4 +1,7 @@
-import { expect, test } from '@playwright/test';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { expect, test } = require('@playwright/test');
 
 const API_ORIGIN = 'https://api.small-town-veggies.test';
 const APP_ORIGIN = 'http://127.0.0.1:4173';
