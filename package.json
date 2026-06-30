@@ -8,8 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint .",
-    "test": "vitest run src/__tests__",
-    "test:e2e": "bash scripts/run-playwright.sh"
+    "test": "vitest run src/__tests__ api/__tests__",
+    "test:e2e": "bash scripts/run-playwright.sh",
+    "admin:hash": "node scripts/generate-admin-password-hash.mjs"
   },
   "dependencies": {
     "lucide-react": "1.22.0",

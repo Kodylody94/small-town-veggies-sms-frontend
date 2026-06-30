@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   api,
   buildRequestHeaders,
+  CSRF_REQUEST_HEADER,
+  IDEMPOTENCY_REQUEST_HEADER,
   isDemoMode,
   liveMutationsEnabled,
   MUTATION_REQUEST_HEADER,
+  setCsrfToken,
 } from '../api';
 
 describe('API safety defaults', () => {
@@ -28,5 +31,16 @@ describe('API safety defaults', () => {
     expect(headers.get('Accept')).toBe('application/json');
     expect(headers.get('Content-Type')).toBe('application/json');
     expect(headers.get(MUTATION_REQUEST_HEADER)).toBe('dashboard');
+  });
+
+  it('adds session-bound CSRF and unique idempotency headers to protected mutations', () => {
+    setCsrfToken('csrf-token-that-is-long-enough');
+    const headers = buildRequestHeaders({}, true, {
+      requiresCsrf: true,
+      requiresIdempotency: true,
+    });
+
+    expect(headers.get(CSRF_REQUEST_HEADER)).toBe('csrf-token-that-is-long-enough');
+    expect(headers.get(IDEMPOTENCY_REQUEST_HEADER)?.length).toBeGreaterThanOrEqual(16);
   });
 });

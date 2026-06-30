@@ -1,8 +1,8 @@
-name: Frontend CI
+name: Frontend and Backend CI
 
 on:
   push:
-    branches: [main, build/frontend-foundation]
+    branches: [main, build/backend-foundation-clean]
   pull_request:
     branches: [main]
 
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: frontend-ci-${{ github.workflow }}-${{ github.ref }}
+  group: app-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -31,7 +31,7 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Lint
         run: npm run lint
-      - name: Unit tests
+      - name: Unit and backend contract tests
         run: npm test
       - name: Build
         run: npm run build
