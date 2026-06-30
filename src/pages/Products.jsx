@@ -1,25 +1,27 @@
 import { useEffect, useState } from 'react';
 import { Plus } from 'lucide-react';
-import { api, isDemoMode } from '../api';
+import { api, liveMutationsEnabled } from '../api';
 import { EmptyState, ErrorState, LoadingState, PageHeader } from '../components/Ui';
 import { formatMoney } from '../utils';
+import { validateProductForm } from '../validation';
 
 const emptyForm = { name: '', price: '', unit: '' };
 
 export default function Products() {
   const [products, setProducts] = useState([]);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState({ ...emptyForm });
+  const [formErrors, setFormErrors] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  const [errorState, setErrorState] = useState(null);
 
   const load = async () => {
     setLoading(true);
-    setError(null);
+    setErrorState(null);
     try {
       setProducts(await api.getProducts());
-    } catch (loadError) {
-      setError(loadError);
+    } catch (error) {
+      setErrorState({ error, title: 'Could not load products', retry: true });
     } finally {
       setLoading(false);
     }
@@ -32,8 +34,8 @@ export default function Products() {
       .then((result) => {
         if (active) setProducts(result);
       })
-      .catch((loadError) => {
-        if (active) setError(loadError);
+      .catch((error) => {
+        if (active) setErrorState({ error, title: 'Could not load products', retry: true });
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -44,16 +46,25 @@ export default function Products() {
     };
   }, []);
 
+  const updateField = (field, value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+    setFormErrors((current) => ({ ...current, [field]: undefined }));
+  };
+
   const submit = async (event) => {
     event.preventDefault();
+    const validation = validateProductForm(form);
+    setFormErrors(validation.errors);
+    if (!validation.isValid || !liveMutationsEnabled) return;
+
     setSaving(true);
-    setError(null);
+    setErrorState(null);
     try {
-      await api.addProduct({ ...form, price: Number(form.price) });
-      setForm(emptyForm);
+      await api.addProduct(validation.value);
+      setForm({ ...emptyForm });
       await load();
-    } catch (saveError) {
-      setError(saveError);
+    } catch (error) {
+      setErrorState({ error, title: 'Could not add product', retry: false });
     } finally {
       setSaving(false);
     }
@@ -69,25 +80,74 @@ export default function Products() {
         description="Maintain the items, units, and prices customers can order."
       />
 
-      {error && <div className="mb-5"><ErrorState error={error} /></div>}
+      {errorState && (
+        <div className="mb-5">
+          <ErrorState
+            error={errorState.error}
+            title={errorState.title}
+            onRetry={errorState.retry ? load : undefined}
+          />
+        </div>
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[22rem_1fr]">
-        <form className="panel h-fit" onSubmit={submit}>
+        <form className="panel h-fit" onSubmit={submit} noValidate>
           <h2 className="mb-4 text-xl font-black text-emerald-950">Add a product</h2>
+          {!liveMutationsEnabled && (
+            <p id="product-mutation-lock" className="mb-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-950">
+              Product changes are locked until the live mutation safety gate is enabled.
+            </p>
+          )}
           <div className="space-y-4">
             <label className="block">
               <span className="mb-1.5 block text-sm font-bold text-stone-700">Product name</span>
-              <input className="field" required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Purple Hull Peas" />
+              <input
+                className="field"
+                maxLength={80}
+                value={form.name}
+                onChange={(event) => updateField('name', event.target.value)}
+                placeholder="Purple Hull Peas"
+                aria-invalid={Boolean(formErrors.name)}
+                aria-describedby={formErrors.name ? 'product-name-error' : undefined}
+              />
+              {formErrors.name && <p id="product-name-error" className="mt-1 text-sm text-red-700">{formErrors.name}</p>}
             </label>
             <label className="block">
               <span className="mb-1.5 block text-sm font-bold text-stone-700">Price</span>
-              <input className="field" required min="0" step="0.01" type="number" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} placeholder="30.00" />
+              <input
+                className="field"
+                min="0"
+                max="10000"
+                step="0.01"
+                type="number"
+                inputMode="decimal"
+                value={form.price}
+                onChange={(event) => updateField('price', event.target.value)}
+                placeholder="30.00"
+                aria-invalid={Boolean(formErrors.price)}
+                aria-describedby={formErrors.price ? 'product-price-error' : undefined}
+              />
+              {formErrors.price && <p id="product-price-error" className="mt-1 text-sm text-red-700">{formErrors.price}</p>}
             </label>
             <label className="block">
               <span className="mb-1.5 block text-sm font-bold text-stone-700">Unit</span>
-              <input className="field" required value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })} placeholder="bucket" />
+              <input
+                className="field"
+                maxLength={40}
+                value={form.unit}
+                onChange={(event) => updateField('unit', event.target.value)}
+                placeholder="bucket"
+                aria-invalid={Boolean(formErrors.unit)}
+                aria-describedby={formErrors.unit ? 'product-unit-error' : undefined}
+              />
+              {formErrors.unit && <p id="product-unit-error" className="mt-1 text-sm text-red-700">{formErrors.unit}</p>}
             </label>
-            <button type="submit" className="button-primary w-full" disabled={isDemoMode || saving} title={isDemoMode ? 'Connect the live backend to add products.' : undefined}>
+            <button
+              type="submit"
+              className="button-primary w-full"
+              disabled={!liveMutationsEnabled || saving}
+              aria-describedby={!liveMutationsEnabled ? 'product-mutation-lock' : undefined}
+            >
               <Plus size={18} aria-hidden="true" /> {saving ? 'Adding…' : 'Add product'}
             </button>
           </div>
@@ -98,6 +158,7 @@ export default function Products() {
         ) : (
           <div className="table-shell">
             <table className="data-table">
+              <caption className="sr-only">Products and current availability</caption>
               <thead>
                 <tr>
                   <th>Product</th>
@@ -109,9 +170,9 @@ export default function Products() {
               <tbody>
                 {products.map((product) => (
                   <tr key={product.id}>
-                    <td className="font-bold text-emerald-950">{product.name}</td>
+                    <td className="font-bold text-emerald-950">{product.name || 'Unnamed product'}</td>
                     <td>{formatMoney(product.price)}</td>
-                    <td>{product.unit}</td>
+                    <td>{product.unit || '—'}</td>
                     <td>
                       <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${product.active === false ? 'bg-stone-200 text-stone-700' : 'bg-emerald-100 text-emerald-900'}`}>
                         {product.active === false ? 'Unavailable' : 'Available'}
