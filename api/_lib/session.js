@@ -69,14 +69,14 @@ export function parseCookies(header) {
     }, {});
 }
 
-export function sessionCookie(token, { production, ttlSeconds }) {
+export function sessionCookie(token, { production, sessionTtlSeconds }) {
   return [
     `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}`,
     'Path=/',
     'HttpOnly',
     'SameSite=Strict',
     production ? 'Secure' : null,
-    `Max-Age=${ttlSeconds}`,
+    `Max-Age=${sessionTtlSeconds}`,
   ]
     .filter(Boolean)
     .join('; ');
