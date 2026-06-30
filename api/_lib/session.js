@@ -16,6 +16,7 @@ function safeEqual(left, right) {
 export function createSessionToken({ secret, ttlSeconds, now = Date.now(), subject = 'admin' }) {
   const issuedAt = Math.floor(now / 1000);
   const payload = {
+    sid: randomBytes(24).toString('base64url'),
     sub: subject,
     iat: issuedAt,
     exp: issuedAt + ttlSeconds,
@@ -43,7 +44,9 @@ export function verifySessionToken(token, secret, now = Date.now()) {
 
   const currentTime = Math.floor(now / 1000);
   if (
-    payload?.sub !== 'admin' ||
+    typeof payload?.sid !== 'string' ||
+    payload.sid.length < 20 ||
+    payload.sub !== 'admin' ||
     !Number.isInteger(payload.iat) ||
     !Number.isInteger(payload.exp) ||
     payload.exp <= currentTime ||
