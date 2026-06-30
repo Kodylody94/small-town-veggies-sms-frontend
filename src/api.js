@@ -1,9 +1,11 @@
+import { normalizeCollection, normalizeCustomer, normalizeOrder, normalizeProduct } from './contracts';
 import { demoCustomers, demoOrders, demoProducts } from './demoData';
 
 const apiUrl = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
 const explicitDemoMode = import.meta.env.VITE_ENABLE_DEMO_DATA === 'true';
 const REQUEST_TIMEOUT_MS = 15_000;
 
+export const MUTATION_REQUEST_HEADER = 'X-Small-Town-Veggies-Request';
 export const isDemoMode = explicitDemoMode || !apiUrl;
 export const liveMutationsEnabled =
   !isDemoMode && import.meta.env.VITE_ENABLE_LIVE_MUTATIONS === 'true';
@@ -19,24 +21,34 @@ function clonePayload(payload) {
   return JSON.parse(JSON.stringify(payload));
 }
 
-function requireCollection(payload, label) {
-  if (!Array.isArray(payload)) {
-    throw new Error(`The backend returned an invalid ${label} response.`);
-  }
-  return payload;
-}
-
 function encodeOrderId(id) {
   const value = String(id ?? '').trim();
   if (!value) throw new Error('A valid order ID is required.');
   return encodeURIComponent(value);
 }
 
+export function buildRequestHeaders(options = {}, isMutation = false) {
+  const headers = new Headers(options.headers ?? {});
+  headers.set('Accept', 'application/json');
+
+  if (options.body != null && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  if (isMutation) {
+    // This non-secret custom header forces a browser CORS preflight. The backend must
+    // require it together with exact-origin CORS and Origin/Fetch-Metadata checks.
+    headers.set(MUTATION_REQUEST_HEADER, 'dashboard');
+  }
+
+  return headers;
+}
+
 async function parseResponse(response) {
   if (response.status === 204) return null;
 
   const contentType = response.headers.get('content-type') ?? '';
-  const isJson = contentType.includes('application/json');
+  const isJson = contentType.toLowerCase().includes('json');
   let payload;
 
   if (isJson) {
@@ -72,7 +84,7 @@ async function parseResponse(response) {
   return payload;
 }
 
-async function request(path, options = {}) {
+async function request(path, options = {}, isMutation = false) {
   const method = (options.method ?? 'GET').toUpperCase();
 
   if (isDemoMode) {
@@ -84,13 +96,8 @@ async function request(path, options = {}) {
 
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  const { headers: providedHeaders, ...fetchOptions } = options;
-  const headers = new Headers(providedHeaders ?? {});
-  headers.set('Accept', 'application/json');
-
-  if (options.body != null && !headers.has('Content-Type')) {
-    headers.set('Content-Type', 'application/json');
-  }
+  const { headers: _providedHeaders, ...fetchOptions } = options;
+  const headers = buildRequestHeaders(options, isMutation);
 
   try {
     const response = await fetch(`${apiUrl}${path}`, {
@@ -120,19 +127,22 @@ function mutationRequest(path, options) {
         : 'Live changes are locked until VITE_ENABLE_LIVE_MUTATIONS is explicitly enabled.',
     );
   }
-  return request(path, options);
+  return request(path, options, true);
 }
 
 export const api = {
-  getOrders: async () => requireCollection(await request('/api/orders'), 'orders'),
+  getOrders: async () =>
+    normalizeCollection(await request('/api/orders'), 'orders', normalizeOrder),
   confirmOrder: (id) =>
     mutationRequest(`/api/orders/${encodeOrderId(id)}/confirm`, { method: 'POST' }),
   markReady: (id) =>
     mutationRequest(`/api/orders/${encodeOrderId(id)}/ready`, { method: 'POST' }),
   markPickedUp: (id) =>
     mutationRequest(`/api/orders/${encodeOrderId(id)}/pickup`, { method: 'POST' }),
-  getCustomers: async () => requireCollection(await request('/api/customers'), 'customers'),
-  getProducts: async () => requireCollection(await request('/api/products'), 'products'),
+  getCustomers: async () =>
+    normalizeCollection(await request('/api/customers'), 'customers', normalizeCustomer),
+  getProducts: async () =>
+    normalizeCollection(await request('/api/products'), 'products', normalizeProduct),
   addProduct: (product) =>
     mutationRequest('/api/products', {
       method: 'POST',
