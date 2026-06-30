@@ -12,6 +12,19 @@ export default function Reminders() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.getOrders();
+      setOrders(result.filter((order) => ['confirmed', 'ready'].includes(order.status)));
+    } catch (loadError) {
+      setError(loadError);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     let active = true;
 
@@ -48,6 +61,9 @@ export default function Reminders() {
   };
 
   if (loading) return <LoadingState label="Loading pickup orders" />;
+  if (error && orders.length === 0) {
+    return <ErrorState error={error} onRetry={load} title="Could not load pickup orders" />;
+  }
 
   return (
     <>
@@ -57,15 +73,21 @@ export default function Reminders() {
         description="Select confirmed or ready orders. Delivery stays disabled until the protected backend endpoint is verified."
       />
 
-      {error && <div className="mb-5"><ErrorState error={error} /></div>}
+      {error && <div className="mb-5"><ErrorState error={error} onRetry={load} title="Could not refresh pickup orders" /></div>}
 
       <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
         Reminder delivery is not connected yet. The selection workflow is available for interface review only.
       </div>
 
-      <div className="mb-5 flex flex-wrap gap-2">
+      <div className="mb-5 flex flex-wrap gap-2" aria-label="Filter pickup reminders by day">
         {pickupDays.map((pickupDay) => (
-          <button key={pickupDay} type="button" onClick={() => setDay(pickupDay)} className={day === pickupDay ? 'button-primary' : 'button-secondary'}>
+          <button
+            key={pickupDay}
+            type="button"
+            onClick={() => setDay(pickupDay)}
+            className={day === pickupDay ? 'button-primary' : 'button-secondary'}
+            aria-pressed={day === pickupDay}
+          >
             {pickupDay}
           </button>
         ))}
@@ -79,8 +101,8 @@ export default function Reminders() {
             <label key={order.id} className="panel flex cursor-pointer items-center gap-4 p-4">
               <input className="size-5 accent-emerald-800" type="checkbox" checked={selected.has(order.id)} onChange={() => toggle(order.id)} />
               <div className="min-w-0 flex-1">
-                <p className="font-bold text-emerald-950">{order.customer_name}</p>
-                <p className="text-sm text-stone-600">Order #{order.id} · {order.pickup_day}</p>
+                <p className="font-bold text-emerald-950">{order.customer_name || 'Unknown'}</p>
+                <p className="text-sm text-stone-600">Order #{order.id} · {order.pickup_day || 'Pickup day not set'}</p>
               </div>
               <StatusBadge status={order.status} />
             </label>
