@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { useEffect, useState } from 'react';
+import { NavLink, Outlet } from 'react-router-dom';
 import {
   BellRing,
   ClipboardList,
@@ -10,25 +10,43 @@ import {
   Sprout,
   Users,
   X,
-} from "lucide-react";
-import { isDemoMode } from "../api";
+} from 'lucide-react';
+import { isDemoMode, liveMutationsEnabled } from '../api';
 
 const navigation = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/orders", label: "Orders", icon: ClipboardList },
-  { to: "/products", label: "Products", icon: PackageOpen },
-  { to: "/customers", label: "Customers", icon: Users },
-  { to: "/broadcasts", label: "Updates", icon: MessageSquareText },
-  { to: "/reminders", label: "Reminders", icon: BellRing },
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/orders', label: 'Orders', icon: ClipboardList },
+  { to: '/products', label: 'Products', icon: PackageOpen },
+  { to: '/customers', label: 'Customers', icon: Users },
+  { to: '/broadcasts', label: 'Updates', icon: MessageSquareText },
+  { to: '/reminders', label: 'Reminders', icon: BellRing },
 ];
 
 export default function Layout() {
   const [open, setOpen] = useState(false);
 
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
+
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[17rem_1fr]">
       <aside
-        className={`${open ? "translate-x-0" : "-translate-x-full"} fixed inset-y-0 left-0 z-40 w-68 bg-emerald-950 text-white transition-transform lg:static lg:w-auto lg:translate-x-0`}
+        id="primary-navigation"
+        className={`${open ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-40 w-72 bg-emerald-950 text-white transition-transform lg:static lg:w-auto lg:translate-x-0`}
       >
         <div className="flex h-full flex-col">
           <div className="flex items-center justify-between border-b border-white/10 p-5">
@@ -47,7 +65,7 @@ export default function Layout() {
               onClick={() => setOpen(false)}
               aria-label="Close navigation"
             >
-              <X size={22} />
+              <X aria-hidden="true" size={22} />
             </button>
           </div>
 
@@ -61,8 +79,8 @@ export default function Layout() {
                 className={({ isActive }) =>
                   `flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 font-medium transition ${
                     isActive
-                      ? "bg-amber-400 text-emerald-950"
-                      : "text-emerald-50 hover:bg-white/10"
+                      ? 'bg-amber-400 text-emerald-950'
+                      : 'text-emerald-50 hover:bg-white/10'
                   }`
                 }
               >
@@ -94,8 +112,10 @@ export default function Layout() {
             className="rounded-xl border border-stone-300 bg-white p-2.5 text-stone-800 lg:hidden"
             onClick={() => setOpen(true)}
             aria-label="Open navigation"
+            aria-controls="primary-navigation"
+            aria-expanded={open}
           >
-            <Menu size={22} />
+            <Menu aria-hidden="true" size={22} />
           </button>
           <div className="flex-1">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">
@@ -111,7 +131,13 @@ export default function Layout() {
 
         {isDemoMode && (
           <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-sm text-amber-950 md:px-7">
-            Preview mode is active. Connect a backend with <code>VITE_API_URL</code> before using live actions.
+            Preview mode is active. Connect a protected backend before using live data.
+          </div>
+        )}
+
+        {!isDemoMode && !liveMutationsEnabled && (
+          <div className="border-b border-sky-200 bg-sky-50 px-4 py-2 text-center text-sm text-sky-950 md:px-7">
+            Live data is connected in read-only mode. Changes remain locked until production safeguards are verified.
           </div>
         )}
 
