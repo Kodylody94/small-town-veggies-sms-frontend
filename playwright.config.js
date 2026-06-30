@@ -1,4 +1,7 @@
-import { defineConfig, devices } from '@playwright/test';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { defineConfig, devices } = require('@playwright/test');
 
 export default defineConfig({
   testDir: './e2e',
