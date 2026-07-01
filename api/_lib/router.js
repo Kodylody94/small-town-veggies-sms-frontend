@@ -15,6 +15,7 @@ import {
   applyCors,
   handlePreflight,
   requireMutationSecurity,
+  requireOrderSubmissionSecurity,
 } from './security.js';
 import {
   ConsoleAuditStore,
@@ -26,7 +27,13 @@ import {
   UnconfiguredRepository,
   UnconfiguredSessionStore,
 } from './stores.js';
-import { validateIdempotencyKey, validateLogin, validateProduct } from './validation.js';
+import { createThreeMinOrderGateway } from './threeMinOrderGateway.js';
+import {
+  validateIdempotencyKey,
+  validateLogin,
+  validateOrderSubmission,
+  validateProduct,
+} from './validation.js';
 
 function clientKey(request) {
   return (getHeader(request, 'x-forwarded-for').split(',')[0] || getHeader(request, 'x-real-ip') || 'unknown').trim();
@@ -67,8 +74,19 @@ function transitionDefinition(action) {
   return transitions[action];
 }
 
+function unavailableOrderGateway() {
+  return {
+    async submit() {
+      throw new ApiError(503, 'ORDER_PROVIDER_NOT_CONFIGURED', 'The order provider is not configured.', {
+        expose: false,
+      });
+    },
+  };
+}
+
 export function createRuntimeDependencies(env = process.env) {
   const productionRuntime = (env.BACKEND_RUNTIME_MODE || (env.NODE_ENV === 'production' ? 'production' : 'development')) === 'production';
+  const sandboxOrderSubmissions = env.THREE_MIN_API_ENVIRONMENT === 'sandbox';
   return {
     getConfig: () => readConfig(env),
     repository: new UnconfiguredRepository(),
@@ -79,6 +97,13 @@ export function createRuntimeDependencies(env = process.env) {
     idempotencyStore: productionRuntime
       ? new UnconfiguredIdempotencyStore()
       : new MemoryIdempotencyStore(),
+    publicRateLimiter: sandboxOrderSubmissions
+      ? new MemoryRateLimiter({ limit: 5, windowMs: 60_000 })
+      : new UnconfiguredRateLimiter(),
+    publicIdempotencyStore: sandboxOrderSubmissions
+      ? new MemoryIdempotencyStore()
+      : new UnconfiguredIdempotencyStore(),
+    orderGateway: createThreeMinOrderGateway(env),
     auditStore: new ConsoleAuditStore(),
     now: () => Date.now(),
   };
@@ -89,6 +114,9 @@ export function createBackendHandler(dependencies) {
     now: () => Date.now(),
     auditStore: new ConsoleAuditStore(),
     sessionStore: new UnconfiguredSessionStore(),
+    publicRateLimiter: new UnconfiguredRateLimiter(),
+    publicIdempotencyStore: new UnconfiguredIdempotencyStore(),
+    orderGateway: unavailableOrderGateway(),
     ...dependencies,
   };
 
@@ -131,6 +159,27 @@ export function createBackendHandler(dependencies) {
       applyCors(request, response, config);
 
       if (method === 'OPTIONS') return handlePreflight(request, response, config);
+
+      if (path === '/order-submissions') {
+        requireMethod(request, 'POST');
+        requireOrderSubmissionSecurity(request, config);
+        await deps.publicRateLimiter.consume(`order-submission:${clientKey(request)}`);
+        const idempotencyKey = validateIdempotencyKey(getHeader(request, 'idempotency-key'));
+        const order = validateOrderSubmission(await readJson(request), deps.now());
+        const created = await deps.publicIdempotencyStore.execute(
+          `order-submission:${idempotencyKey}`,
+          () => deps.orderGateway.submit(order),
+        );
+        await audit(deps.auditStore, {
+          request_id: requestId,
+          operation: 'order.submit',
+          target: String(created.id),
+          outcome: 'success',
+          actor: 'customer',
+          timestamp: new Date(deps.now()).toISOString(),
+        });
+        return sendJson(response, 202, { data: created });
+      }
 
       if (path === '/auth/login') {
         requireMethod(request, 'POST');
