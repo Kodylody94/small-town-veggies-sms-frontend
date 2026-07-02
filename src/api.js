@@ -9,6 +9,8 @@ const REQUEST_TIMEOUT_MS = 15_000;
 export const MUTATION_REQUEST_HEADER = 'X-Small-Town-Veggies-Request';
 export const CSRF_REQUEST_HEADER = 'X-CSRF-Token';
 export const IDEMPOTENCY_REQUEST_HEADER = 'Idempotency-Key';
+export const DASHBOARD_REQUEST_MARKER = 'dashboard';
+export const ORDER_FORM_REQUEST_MARKER = 'order-form';
 export const isDemoMode = explicitDemoMode || !configuredApiUrl;
 export const liveMutationsEnabled =
   !isDemoMode && import.meta.env.VITE_ENABLE_LIVE_MUTATIONS === 'true';
@@ -59,7 +61,7 @@ export function buildRequestHeaders(options = {}, isMutation = false, policy = {
   }
 
   if (isMutation) {
-    headers.set(MUTATION_REQUEST_HEADER, 'dashboard');
+    headers.set(MUTATION_REQUEST_HEADER, policy.requestMarker ?? DASHBOARD_REQUEST_MARKER);
 
     if (policy.requiresCsrf) {
       if (!csrfToken) {
@@ -120,7 +122,7 @@ async function request(path, options = {}, policy = {}) {
   const method = (options.method ?? 'GET').toUpperCase();
   const isMutation = policy.mutation === true;
 
-  if (isDemoMode) {
+  if (isDemoMode && !policy.allowInDemoMode) {
     if (method !== 'GET') {
       throw new Error('Changes are disabled while the dashboard is in demo mode.');
     }
@@ -167,6 +169,22 @@ function mutationRequest(path, options) {
   });
 }
 
+function orderSubmissionRequest(order) {
+  return request(
+    '/api/order-submissions',
+    {
+      method: 'POST',
+      body: JSON.stringify(order),
+    },
+    {
+      mutation: true,
+      requiresIdempotency: true,
+      requestMarker: ORDER_FORM_REQUEST_MARKER,
+      allowInDemoMode: true,
+    },
+  );
+}
+
 export const api = {
   login: async (password) => {
     const session = await request(
@@ -191,6 +209,7 @@ export const api = {
     clearCsrfToken();
     return result;
   },
+  submitOrder: orderSubmissionRequest,
   getOrders: async () =>
     normalizeCollection(await request('/api/orders'), 'orders', normalizeOrder),
   confirmOrder: (id) =>

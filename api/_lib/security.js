@@ -4,6 +4,8 @@ import { getHeader, setHeader } from './http.js';
 
 export const MUTATION_MARKER_HEADER = 'X-Small-Town-Veggies-Request';
 export const CSRF_HEADER = 'X-CSRF-Token';
+export const DASHBOARD_REQUEST_MARKER = 'dashboard';
+export const ORDER_FORM_REQUEST_MARKER = 'order-form';
 
 function safeEqual(left, right) {
   const leftBuffer = Buffer.from(String(left ?? ''));
@@ -45,7 +47,7 @@ export function requireAllowedOrigin(request, config) {
   }
 }
 
-export function requireMutationSecurity(request, config, options = {}) {
+function requireJsonMutation(request, config, marker) {
   requireAllowedOrigin(request, config);
 
   const fetchSite = getHeader(request, 'sec-fetch-site');
@@ -56,7 +58,7 @@ export function requireMutationSecurity(request, config, options = {}) {
     throw new ApiError(403, 'FETCH_SITE_NOT_ALLOWED', 'The request site context is not allowed.');
   }
 
-  if (getHeader(request, MUTATION_MARKER_HEADER) !== 'dashboard') {
+  if (getHeader(request, MUTATION_MARKER_HEADER) !== marker) {
     throw new ApiError(403, 'MUTATION_MARKER_REQUIRED', 'The protected mutation marker is missing.');
   }
 
@@ -64,8 +66,16 @@ export function requireMutationSecurity(request, config, options = {}) {
   if (!contentType.startsWith('application/json')) {
     throw new ApiError(415, 'JSON_REQUIRED', 'Protected mutations require application/json.');
   }
+}
+
+export function requireMutationSecurity(request, config, options = {}) {
+  requireJsonMutation(request, config, DASHBOARD_REQUEST_MARKER);
 
   if (options.csrfToken && !safeEqual(getHeader(request, CSRF_HEADER), options.csrfToken)) {
     throw new ApiError(403, 'CSRF_TOKEN_INVALID', 'The CSRF token is invalid or missing.');
   }
+}
+
+export function requireOrderSubmissionSecurity(request, config) {
+  requireJsonMutation(request, config, ORDER_FORM_REQUEST_MARKER);
 }
