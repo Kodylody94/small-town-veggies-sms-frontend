@@ -47,7 +47,7 @@ function makeResponse() {
   };
 }
 
-function makeDependencies() {
+function makeDependencies({ now = NOW } = {}) {
   const orderGateway = {
     submissions: [],
     async submit(order) {
@@ -59,7 +59,7 @@ function makeDependencies() {
         total: order.total,
         pickup_date: order.pickup_date,
         pickup_location: order.pickup_location,
-        submitted_at: new Date(NOW).toISOString(),
+        submitted_at: new Date(now).toISOString(),
       };
     },
   };
@@ -74,11 +74,11 @@ function makeDependencies() {
       allowSameSiteRequests: false,
       runtimeMode: 'test',
     },
-    publicRateLimiter: new MemoryRateLimiter({ limit: 20, now: () => NOW }),
+    publicRateLimiter: new MemoryRateLimiter({ limit: 20, now: () => now }),
     publicIdempotencyStore: new MemoryIdempotencyStore(),
     orderGateway,
     auditStore: new MemoryAuditStore(),
-    now: () => NOW,
+    now: () => now,
   };
 }
 
@@ -155,5 +155,41 @@ describe('public sandbox order submission', () => {
       bucket_price: expect.any(String),
       quantity: expect.any(String),
     });
+  });
+
+  it('validates pickup dates against the America/Chicago calendar day', async () => {
+    const lateEveningCentral = Date.parse('2026-07-03T04:30:00.000Z');
+    const acceptedDependencies = makeDependencies({ now: lateEveningCentral });
+    const accepted = await dispatch(
+      createBackendHandler(acceptedDependencies),
+      { ...validBody, pickup_date: '2026-07-02' },
+      { 'idempotency-key': 'sandbox-order-date-accepted' },
+    );
+    const daySixty = await dispatch(
+      createBackendHandler(makeDependencies({ now: lateEveningCentral })),
+      { ...validBody, pickup_date: '2026-08-31' },
+      { 'idempotency-key': 'sandbox-order-date-day-60' },
+    );
+    const priorDay = await dispatch(
+      createBackendHandler(makeDependencies({ now: lateEveningCentral })),
+      { ...validBody, pickup_date: '2026-07-01' },
+      { 'idempotency-key': 'sandbox-order-date-prior' },
+    );
+    const daySixtyOne = await dispatch(
+      createBackendHandler(makeDependencies({ now: lateEveningCentral })),
+      { ...validBody, pickup_date: '2026-09-01' },
+      { 'idempotency-key': 'sandbox-order-date-day-61' },
+    );
+    const invalidCalendarDate = await dispatch(
+      createBackendHandler(makeDependencies({ now: Date.parse('2026-02-01T18:00:00.000Z') })),
+      { ...validBody, pickup_date: '2026-02-29' },
+      { 'idempotency-key': 'sandbox-order-invalid-calendar' },
+    );
+
+    expect(accepted.statusCode).toBe(202);
+    expect(daySixty.statusCode).toBe(202);
+    expect(priorDay.statusCode).toBe(422);
+    expect(daySixtyOne.statusCode).toBe(422);
+    expect(invalidCalendarDate.statusCode).toBe(422);
   });
 });
