@@ -12,6 +12,14 @@ The dashboard uses three explicit operating states:
 
 Customer broadcast and reminder delivery remain disabled in the interface until their protected backend workflows receive a separate end-to-end verification. The interface never claims that an SMS was sent when no delivery occurred.
 
+## Sandbox public order form
+
+The `/order` page submits test bucket requests through `POST /api/order-submissions`. The server validates and normalizes the request, calculates the total, fixes the pickup location and initial statuses, and forwards an allowlisted payload to the 3Min API sandbox.
+
+This route is for controlled testing only. It does not collect payment, reserve inventory, guarantee produce availability, send SMS, or create production records. Pickup dates are evaluated as date-only values in `America/Chicago`, from the current Central Time business date through 60 days later, inclusive.
+
+The browser sends the distinct request marker `order-form` and an idempotency key to the same-origin backend. The upstream provider credential remains server-only. Full request, response, environment, error, and sandbox durability requirements are documented in [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md).
+
 ## Local setup
 
 ```bash
@@ -36,7 +44,7 @@ The API client sends cookies with `credentials: include`, applies a 15-second ti
 
 The frontend/backend agreement is versioned in:
 
-- [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md) — human-readable security, schema, error, workflow, consent, and acceptance requirements
+- [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md) — human-readable security, schema, error, workflow, consent, sandbox, and acceptance requirements
 - [`docs/openapi.yaml`](docs/openapi.yaml) — machine-readable OpenAPI 3.1 contract
 
 The contract remains a draft until the protected backend and staging acceptance gates are demonstrated.
@@ -60,6 +68,7 @@ Order recency uses `created_at`, then `submitted_at`, then `updated_at`. Numeric
 
 | Method | Route | Purpose |
 | --- | --- | --- |
+| POST | `/api/order-submissions` | Submit a sandbox-only public order request |
 | GET | `/api/orders` | List orders |
 | POST | `/api/orders/:id/confirm` | Confirm an order |
 | POST | `/api/orders/:id/ready` | Mark an order ready |
@@ -72,23 +81,22 @@ Order recency uses `created_at`, then `submitted_at`, then `updated_at`. Numeric
 
 ## Credentialed mutation contract
 
-Every frontend mutation includes:
+Every protected dashboard mutation includes:
 
 ```http
 Content-Type: application/json
 X-Small-Town-Veggies-Request: dashboard
 ```
 
-The custom header is not a secret. It intentionally forces a browser preflight. The backend must reject a mutation unless all of these checks pass:
+Public sandbox order submissions use:
 
-- The administrator session is authenticated and authorized for the requested record.
-- `Origin` matches an exact allowlisted dashboard origin.
-- Credentialed CORS returns that exact origin, never `*`.
-- `Sec-Fetch-Site` is `same-origin` or an explicitly reviewed `same-site` case.
-- `Content-Type` is an allowed JSON media type.
-- `X-Small-Town-Veggies-Request` is exactly `dashboard`.
-- Any session-bound CSRF token required by the backend is present and valid.
-- The requested state transition is valid, idempotent, rate-limited, and audit logged.
+```http
+Content-Type: application/json
+X-Small-Town-Veggies-Request: order-form
+Idempotency-Key: <unique value>
+```
+
+The custom request header is not a secret. It intentionally forces a browser preflight. The backend must reject a mutation unless all applicable origin, Fetch Metadata, JSON, session, CSRF, idempotency, rate-limit, and validation checks pass.
 
 The frontend mutation flag is only an interface safety lock. It is not authentication, authorization, or a security boundary.
 
@@ -108,9 +116,11 @@ Current automated coverage includes:
 - Formatting and product validation utilities
 - Strict API record contracts
 - Timestamp-based order ordering
+- Central Time date-only pickup boundaries and invalid calendar dates
+- Public order validation, idempotency, and request headers
+- 3Min gateway configuration, URL allowlisting, timeout, network, provider response, and secret non-disclosure behavior
 - Stale reminder-selection pruning
 - Defensive demo copies and mutation locks
-- Mutation request headers
 - Live read-only dashboard rendering
 - Fail-closed customer consent and product availability in a real browser
 - Normalized authorization-error presentation
@@ -118,19 +128,19 @@ Current automated coverage includes:
 
 GitHub Actions runs the locked application checks first, followed by the Chromium browser suite. Browser traces, screenshots, and the HTML report are retained as short-lived artifacts when the browser job fails.
 
-The current branch verification passes 15 unit tests across four files and four Chromium browser scenarios. The latest verified head is recorded in the pull request description.
-
 ## Vercel deployment
 
 1. Import this GitHub repository into Vercel.
 2. Add `VITE_API_URL` with the public HTTPS backend URL.
-3. Set `VITE_ENABLE_DEMO_DATA=false` only when the protected backend is ready.
-4. Keep `VITE_ENABLE_LIVE_MUTATIONS=false` through read-only production verification.
-5. Keep customer broadcasts and reminder delivery disconnected.
-6. Deploy and verify every response security header defined in `vercel.json`.
-7. Run the complete read-only and mutation test plans before changing either safety gate.
+3. Configure the server-only sandbox order settings documented in the API contract.
+4. Set the exact preview origin accepted by the backend.
+5. Keep `VITE_ENABLE_DEMO_DATA=true` and `VITE_ENABLE_LIVE_MUTATIONS=false` while verifying `/order`.
+6. Submit a clearly labeled test request and confirm its record ID in 3Min API sandbox logs.
+7. Confirm no provider credential appears in page source, browser bundles, or response bodies.
+8. Keep customer broadcasts and reminder delivery disconnected.
+9. Deploy and verify every response security header defined in `vercel.json`.
 
-The committed CSP uses `connect-src 'self'`, so it fails closed and blocks cross-origin API connections by default. Prefer a reviewed same-origin API or reverse proxy. If the final backend must remain cross-origin, replace that directive with only `'self'` plus the exact HTTPS backend origin before deployment; never restore a wildcard or general `https:` source.
+The committed CSP uses `connect-src 'self'`, so browser API traffic remains same-origin and the server performs the upstream provider request.
 
 ## Required production safeguards
 
@@ -138,6 +148,7 @@ The committed CSP uses `connect-src 'self'`, so it fails closed and blocks cross
 - Secure, `HttpOnly`, `SameSite`, HTTPS-only session cookies or another reviewed authentication design
 - Restricted credentialed CORS matching the exact dashboard domain
 - Origin, Fetch Metadata, custom-header, and CSRF-token enforcement for mutations
+- Durable shared rate-limit and idempotency stores
 - Server-side SMS consent enforcement immediately before each send
 - STOP and opt-out handling that cannot be bypassed by the frontend
 - Rate limiting, idempotency protection, and audit logs for all mutations
