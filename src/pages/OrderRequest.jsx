@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { LoaderCircle, Sprout } from 'lucide-react';
 import { api } from '../api';
+import { pickupDateRange } from '../dateOnly';
 
 const blankOrder = {
   customer_name: '',
@@ -11,21 +12,12 @@ const blankOrder = {
   notes: '',
 };
 
-function dateInputValue(date) {
-  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
-}
-
 const inputClass = 'min-h-12 w-full rounded-xl border border-stone-300 bg-white px-3 font-normal outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-100';
 
 export default function OrderRequest() {
   const [order, setOrder] = useState(blankOrder);
   const [state, setState] = useState({ status: 'idle', message: '', result: null });
-  const today = useMemo(() => new Date(), []);
-  const lastPickupDate = useMemo(() => {
-    const value = new Date(today);
-    value.setDate(value.getDate() + 60);
-    return value;
-  }, [today]);
+  const pickupDates = useMemo(() => pickupDateRange(), []);
   const total = Number(order.bucket_price) * Number(order.quantity || 0);
 
   function change(event) {
@@ -79,7 +71,7 @@ export default function OrderRequest() {
           <div className="grid gap-5 md:grid-cols-3">
             <label className="space-y-2 font-semibold">Bucket<select className={inputClass} name="bucket_price" value={order.bucket_price} onChange={change}><option value="25">$25 bucket</option><option value="30">$30 bucket</option><option value="35">$35 bucket</option></select></label>
             <label className="space-y-2 font-semibold">Quantity<input className={inputClass} type="number" name="quantity" value={order.quantity} onChange={change} min="1" max="5" step="1" required /></label>
-            <label className="space-y-2 font-semibold">Pickup date<input className={inputClass} type="date" name="pickup_date" value={order.pickup_date} onChange={change} min={dateInputValue(today)} max={dateInputValue(lastPickupDate)} required /></label>
+            <label className="space-y-2 font-semibold">Pickup date<input className={inputClass} type="date" name="pickup_date" value={order.pickup_date} onChange={change} min={pickupDates.minimum} max={pickupDates.maximum} required /></label>
           </div>
 
           <label className="block space-y-2 font-semibold">Notes <span className="font-normal text-stone-500">(optional)</span><textarea className={`${inputClass} min-h-28 py-3`} name="notes" value={order.notes} onChange={change} maxLength={500} /></label>

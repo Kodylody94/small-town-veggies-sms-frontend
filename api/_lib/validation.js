@@ -2,6 +2,8 @@ import { ApiError } from './errors.js';
 
 const ALLOWED_BUCKET_PRICES = new Set([25, 30, 35]);
 const PICKUP_LOCATION = 'Small Town Veggies Ovett';
+const BUSINESS_TIME_ZONE = 'America/Chicago';
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function requiredText(value, field, maximumLength) {
   const normalized = typeof value === 'string' ? value.trim() : '';
@@ -36,18 +38,51 @@ function normalizeUsPhone(value) {
   return `+1${nationalNumber}`;
 }
 
-function validatePickupDate(value, now) {
+function parseDateOnly(value) {
   const normalized = typeof value === 'string' ? value.trim() : '';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);
+  if (!match) return null;
 
-  const pickupTime = Date.parse(`${normalized}T00:00:00.000Z`);
-  if (!Number.isFinite(pickupTime)) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const timestamp = Date.UTC(year, month - 1, day);
+  const date = new Date(timestamp);
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
 
-  const today = new Date(now);
-  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
-  const maximum = todayUtc + 60 * 24 * 60 * 60 * 1000;
-  if (pickupTime < todayUtc || pickupTime > maximum) return null;
-  return normalized;
+  return { value: normalized, timestamp };
+}
+
+function businessDateOnly(now) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: BUSINESS_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = Object.fromEntries(
+    formatter
+      .formatToParts(new Date(now))
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function validatePickupDate(value, now) {
+  const pickup = parseDateOnly(value);
+  const today = parseDateOnly(businessDateOnly(now));
+  if (!pickup || !today) return null;
+
+  const difference = pickup.timestamp - today.timestamp;
+  if (difference < 0 || difference > 60 * DAY_MS || difference % DAY_MS !== 0) return null;
+  return pickup.value;
 }
 
 export function validateLogin(body) {
@@ -123,7 +158,7 @@ export function validateOrderSubmission(body, now = Date.now()) {
 
   const pickupDate = validatePickupDate(body?.pickup_date, now);
   if (!pickupDate) {
-    errors.pickup_date = 'Choose a valid pickup date within the next 60 days.';
+    errors.pickup_date = 'Choose a valid pickup date within the next 60 days in America/Chicago.';
   }
 
   if (Object.keys(errors).length) {

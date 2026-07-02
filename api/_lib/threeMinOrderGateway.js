@@ -1,6 +1,8 @@
 import { ApiError } from './errors.js';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
+const THREE_MIN_HOSTNAME = 'api.3minapi.com';
+const THREE_MIN_DATA_PATH = /^\/api\/v1\/data\/[A-Za-z0-9_-]+$/;
 
 function requireServerSetting(name, value) {
   const normalized = String(value ?? '').trim();
@@ -24,7 +26,16 @@ function requireEndpointUrl(value) {
     });
   }
 
-  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) {
+  if (
+    url.protocol !== 'https:' ||
+    url.hostname !== THREE_MIN_HOSTNAME ||
+    url.port ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    !THREE_MIN_DATA_PATH.test(url.pathname)
+  ) {
     throw new ApiError(503, 'ORDER_PROVIDER_NOT_CONFIGURED', 'The order provider URL is invalid.', {
       expose: false,
     });
