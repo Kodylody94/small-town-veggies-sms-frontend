@@ -1,88 +1,211 @@
 # Small Town Veggies API Contract
 
-**Contract version:** 0.1.0-draft  
-**Status:** Draft; live mutations and customer messaging remain disabled  
+**Contract version:** 0.3.0-draft  
+**Status:** Sandbox public order submission is implemented; production storage, live administrator mutations, payments, inventory reservation, and customer messaging remain disabled  
 **Machine-readable specification:** [`openapi.yaml`](./openapi.yaml)
 
 ## Purpose
 
-This contract fixes the data shapes, response behavior, security requirements, and order workflow expected by the Small Town Veggies dashboard. The frontend and backend must both conform to this document before live mutation mode is enabled.
+This contract defines the data shapes, response behavior, security requirements, and order workflow used by the Small Town Veggies dashboard and its sandbox-only public order form. The frontend and backend must conform to this document before any production capability is enabled.
+
+## Operating boundaries
+
+The current public `/order` page and `POST /api/order-submissions` route are for controlled sandbox testing only.
+
+They do not:
+
+- collect or authorize payment;
+- reserve produce or guarantee availability;
+- send SMS messages or confirmations;
+- create production records;
+- enable the protected administrator dashboard mutations.
+
+The upstream integration must remain configured for the 3Min API sandbox and must use a server-only collaboration key limited to record creation.
 
 ## Compatibility rules
 
-- The backend must send `Content-Type: application/json` for every JSON response.
-- Successful collection responses should use `{ "data": [...], "meta": {...} }`.
-- The frontend temporarily accepts a raw JSON array for collection routes during migration.
-- Every record must be an object with a non-empty string or numeric `id`.
-- Unknown fields may be ignored by the frontend, but existing fields may not change type without a contract-version change.
-- Dates and timestamps must use ISO 8601. Date-time values must include a timezone offset or `Z`.
-- Monetary values are JSON numbers in US dollars; they must be finite and non-negative.
+- JSON responses use `Content-Type: application/json`.
+- Successful collection responses use `{ "data": [...], "meta": {...} }`.
+- Every returned record has a non-empty string or numeric `id`.
+- Dates and timestamps use ISO 8601.
+- Date-time values include a timezone offset or `Z`.
+- Public pickup dates are date-only `YYYY-MM-DD` values evaluated in `America/Chicago`.
+- Monetary values are finite, non-negative JSON numbers in US dollars.
+- Unknown public-order request fields are discarded and never forwarded upstream.
 
 ## Authentication and session behavior
 
-The dashboard uses a protected administrator session represented by a secure cookie.
+Protected dashboard routes use a secure administrator session represented by an `HttpOnly` cookie. Every protected route independently authenticates and authorizes the administrator.
 
-Required cookie properties in production:
+Required production cookie properties:
 
-- `HttpOnly`
-- `Secure`
-- reviewed `SameSite` policy
-- narrow path and domain scope
-- short idle timeout and an absolute expiration
-
-Every backend route must independently authenticate and authorize the current administrator. The frontend environment flag is not an authorization boundary.
+- `HttpOnly`;
+- `Secure`;
+- reviewed `SameSite` policy;
+- narrow path and domain scope;
+- short idle timeout and absolute expiration.
 
 Expected authorization responses:
 
-| Status | Meaning | Frontend behavior |
-| --- | --- | --- |
-| `401` | No valid administrator session | Stop the operation and require sign-in |
-| `403` | Valid session without permission | Display a non-retryable authorization error |
+| Status | Meaning |
+| --- | --- |
+| `401` | No valid administrator session |
+| `403` | Origin, Fetch Metadata, request marker, CSRF, or authorization check failed |
 
-## Credentialed CORS and mutation protection
+The public sandbox order route does not use an administrator session or CSRF token. It has a separate same-origin security policy described below.
 
-For a cross-origin deployment, the backend must:
+## Origin, request-marker, and mutation protection
 
-- Return the exact allowlisted dashboard origin, never `*`.
-- Return `Access-Control-Allow-Credentials: true`.
-- Permit only required methods and headers.
-- Validate `Origin` and Fetch Metadata before processing a mutation.
-- Require JSON content types for mutation bodies.
-- Require `X-Small-Town-Veggies-Request: dashboard`.
-- Validate any session-bound CSRF token required by the final backend design.
+All browser mutations require:
 
-The custom request header is deliberately non-simple so browsers perform a preflight. It is not a secret and must not be treated as authentication.
+- the exact allowlisted `APP_ORIGIN`;
+- an allowed Fetch Metadata site context;
+- `Content-Type: application/json`;
+- a route-specific `X-Small-Town-Veggies-Request` value;
+- an `Idempotency-Key` where the operation can create or change business data.
+
+Protected dashboard mutations use:
+
+```http
+X-Small-Town-Veggies-Request: dashboard
+X-CSRF-Token: <session-bound token>
+Idempotency-Key: <unique value>
+```
+
+Public sandbox order submissions use:
+
+```http
+X-Small-Town-Veggies-Request: order-form
+Idempotency-Key: <unique value>
+```
+
+The request marker is not a secret and must never be treated as authentication. Its purpose is to force a browser preflight and separate the public order form from administrator mutations.
 
 ## Standard error response
 
-All expected API errors should use:
+Expected API errors use:
 
 ```json
 {
-  "message": "The order cannot move from ready back to confirmed.",
-  "code": "INVALID_ORDER_TRANSITION",
+  "message": "The request contains invalid fields.",
+  "code": "VALIDATION_FAILED",
   "field_errors": {
-    "status": "The requested transition is not allowed."
+    "pickup_date": "Choose a valid pickup date within the next 60 days in America/Chicago."
   },
-  "request_id": "req_01J..."
+  "request_id": "0d132cd4-e6b0-4dc0-a1fb-3c96e3e8587c"
 }
 ```
 
-`field_errors` and `request_id` are optional. `message` and `code` are required.
-
-Recommended status mapping:
+`field_errors` is optional. `message`, `code`, and `request_id` are required by the machine-readable contract.
 
 | Status | Use |
 | --- | --- |
-| `400` | Malformed request |
-| `401` | Missing or expired session |
-| `403` | Authenticated but unauthorized |
+| `400` | Malformed request or invalid idempotency key |
+| `401` | Missing or expired administrator session |
+| `403` | Origin, marker, Fetch Metadata, CSRF, or authorization failure |
 | `404` | Record not found |
 | `409` | Invalid state transition or idempotency conflict |
+| `415` | Mutation did not use JSON |
 | `422` | Schema or field validation failure |
 | `429` | Rate limit exceeded |
-| `500` | Unexpected server failure |
-| `503` | Dependent service unavailable |
+| `502` | Sandbox provider rejected the request or returned an invalid response |
+| `503` | Required configuration, durable adapter, or sandbox provider unavailable |
+
+Provider response bodies, API keys, authorization headers, and other upstream details must not be copied into browser error responses.
+
+## Public sandbox order submission
+
+### Route
+
+`POST /api/order-submissions`
+
+### Request headers
+
+```http
+Content-Type: application/json
+X-Small-Town-Veggies-Request: order-form
+Idempotency-Key: <16-200 characters>
+```
+
+### Request body
+
+```json
+{
+  "customer_name": "Sandbox Customer",
+  "phone": "601-555-0147",
+  "bucket_price": 30,
+  "quantity": 1,
+  "pickup_date": "2026-07-03",
+  "notes": "Sandbox verification only."
+}
+```
+
+Validation rules:
+
+- `customer_name`: required text, maximum 120 characters;
+- `phone`: valid 10-digit US number, normalized server-side to E.164;
+- `bucket_price`: exactly `25`, `30`, or `35`;
+- `quantity`: integer from `1` through `5`;
+- `pickup_date`: a real calendar date from the current `America/Chicago` business date through 60 days later, inclusive;
+- `notes`: optional text, maximum 500 characters.
+
+The server calculates `total` and constructs the upstream payload. Client-supplied values cannot override:
+
+- `pickup_location: "Small Town Veggies Ovett"`;
+- `payment_status: "unpaid"`;
+- `order_status: "received"`;
+- the item name and calculated total;
+- the server creation timestamp.
+
+### Successful response
+
+The 3Min API contract is asynchronous. Only an upstream HTTP `202` with a non-empty record ID is accepted as success.
+
+```json
+{
+  "data": {
+    "id": "sandbox-record-id",
+    "status": "received",
+    "customer_name": "Sandbox Customer",
+    "total": 30,
+    "pickup_date": "2026-07-03",
+    "pickup_location": "Small Town Veggies Ovett",
+    "submitted_at": "2026-07-02T18:00:00.000Z"
+  }
+}
+```
+
+### Sandbox upstream controls
+
+The server must:
+
+- require `ENABLE_PUBLIC_ORDER_SUBMISSIONS=true`;
+- require `THREE_MIN_API_ENVIRONMENT=sandbox`;
+- require an HTTPS URL on `api.3minapi.com` under `/api/v1/data/{endpoint}`;
+- reject URL credentials, custom ports, query strings, fragments, and other hosts or paths;
+- require a sandbox test key;
+- keep the key in a server-only variable;
+- abort slow upstream requests;
+- accept only HTTP `202` plus a record ID;
+- normalize network, timeout, provider, and malformed-response failures without disclosing secrets.
+
+### Required server-only environment variables
+
+| Variable | Purpose |
+| --- | --- |
+| `APP_ORIGIN` | Exact browser origin accepted for the order form and dashboard |
+| `ENABLE_PUBLIC_ORDER_SUBMISSIONS` | Explicit sandbox order-form enable switch |
+| `THREE_MIN_API_ENVIRONMENT` | Must remain `sandbox` in this stage |
+| `THREE_MIN_API_URL` | Approved Small Town Veggies 3Min data endpoint |
+| `THREE_MIN_API_SANDBOX_KEY` | Create-only sandbox collaboration key |
+
+None of these provider settings may use a `VITE_` prefix. The sandbox key must never be committed to GitHub or returned to the browser.
+
+The protected administrator routes separately require their documented session and password-hash configuration.
+
+### Sandbox durability limitation
+
+Public rate-limit and idempotency stores are currently in-memory. They are suitable for controlled sandbox verification only and do not provide cross-instance durability in serverless production. Production activation requires durable shared stores and a reviewed abuse-prevention design.
 
 ## Record contracts
 
@@ -90,19 +213,10 @@ Recommended status mapping:
 
 Required:
 
-- `id`: non-empty string or number
-- `status`: `pending`, `confirmed`, `ready`, or `picked_up`
+- `id`: non-empty string or number;
+- `status`: `pending`, `confirmed`, `ready`, or `picked_up`.
 
-Supported display fields:
-
-- `customer_name`: string, maximum 120 characters
-- `pickup_day`: string, maximum 40 characters
-- `total`: non-negative number
-- `created_at`: ISO 8601 date-time
-- `submitted_at`: ISO 8601 date-time
-- `updated_at`: ISO 8601 date-time
-
-The dashboard determines recency using `created_at`, then `submitted_at`, then `updated_at`. The backend should always provide `created_at`.
+Supported display fields include `customer_name`, `pickup_day`, `total`, `created_at`, `submitted_at`, and `updated_at`.
 
 Allowed forward transitions:
 
@@ -110,43 +224,30 @@ Allowed forward transitions:
 pending -> confirmed -> ready -> picked_up
 ```
 
-The backend must reject skipped, reversed, repeated, or otherwise invalid transitions unless a documented idempotent replay returns the already-current record.
+Skipped, reversed, repeated, or otherwise invalid transitions are rejected unless a documented idempotent replay returns the already-current record.
 
 ### Customer
 
 Required:
 
-- `id`: non-empty string or number
-- `opted_in`: literal JSON boolean
+- `id`: non-empty string or number;
+- `opted_in`: literal JSON boolean.
 
-Supported fields:
-
-- `name`: string, maximum 120 characters
-- `phone`: normalized E.164 phone number preferred
-- `created_at`: ISO 8601 date-time or date
-- `consent_updated_at`: ISO 8601 date-time
-- `consent_source`: `web`, `sms`, `paper`, `staff`, or `unknown`
-
-Consent is fail-closed:
-
-- Only literal JSON `true` authorizes messaging.
-- Literal `false` is opted out.
-- Missing, string, numeric, or ambiguous consent is unknown and must not authorize messaging.
-- The backend must re-check current consent immediately before every send.
+Consent is fail-closed. Only literal `true` authorizes messaging. Missing, string, numeric, or ambiguous values must never authorize messaging. Consent must be rechecked immediately before every send.
 
 ### Product
 
 Required:
 
-- `id`: non-empty string or number
-- `name`: non-empty string, maximum 80 characters
-- `price`: number from `0` through `10000`
-- `unit`: non-empty string, maximum 40 characters
-- `active`: literal JSON boolean
+- `id`: non-empty string or number;
+- `name`: non-empty string, maximum 80 characters;
+- `price`: number from `0` through `10000`;
+- `unit`: non-empty string, maximum 40 characters;
+- `active`: literal JSON boolean.
 
-Availability is fail-closed. Only literal JSON `true` means available.
+Availability is fail-closed. Only literal `true` means available.
 
-## Endpoint behavior
+## Protected endpoint behavior
 
 ### Read routes
 
@@ -156,8 +257,6 @@ Availability is fail-closed. Only literal JSON `true` means available.
 | `GET` | `/api/customers` | Customer collection |
 | `GET` | `/api/products` | Product collection |
 
-Read routes must not mutate data and should support `ETag` or another reviewed caching strategy only if private customer data cannot be shared across sessions.
-
 ### Order transitions
 
 | Method | Route | Required current state | Resulting state |
@@ -166,93 +265,38 @@ Read routes must not mutate data and should support `ETag` or another reviewed c
 | `POST` | `/api/orders/{id}/ready` | `confirmed` | `ready` |
 | `POST` | `/api/orders/{id}/pickup` | `ready` | `picked_up` |
 
-Each successful mutation should return `{ "data": <updated order> }`.
-
 ### Product creation
 
-`POST /api/products`
+`POST /api/products` normalizes whitespace, validates all fields, explicitly sets initial availability, and returns the created product.
 
-Request:
+### Broadcasts and reminders
 
-```json
-{
-  "name": "Purple Hull Peas",
-  "price": 25.5,
-  "unit": "bucket"
-}
-```
-
-The backend must normalize whitespace, validate all fields, set the initial availability explicitly, and return the created product.
-
-### Broadcasts
-
-`POST /api/broadcasts`
-
-Request:
-
-```json
-{
-  "message": "Fresh-picked vegetables are available today."
-}
-```
-
-The backend must select recipients from current server-side consent records. A client-supplied recipient list must never bypass consent enforcement.
-
-### Pickup reminders
-
-`POST /api/reminders`
-
-Request:
-
-```json
-{
-  "order_ids": [1041, 1040]
-}
-```
-
-The backend must verify that every order still exists, remains eligible, belongs to a message-authorized customer, and has not already received the same reminder within the protected deduplication window.
+`POST /api/broadcasts` and `POST /api/reminders` remain disabled. Recipient selection must eventually occur server-side from current consent records; client-supplied recipients can never bypass consent enforcement.
 
 ## Pagination
 
-Collection endpoints should support:
+Collection endpoints should support `limit` from 1 through 100 and an opaque server-generated `cursor`. The frontend does not yet expose pagination controls.
 
-- `limit`: integer from 1 through 100
-- `cursor`: opaque server-generated cursor
+## Idempotency, rate limiting, and audit requirements
 
-Envelope example:
-
-```json
-{
-  "data": [],
-  "meta": {
-    "next_cursor": null,
-    "count": 0
-  }
-}
-```
-
-The frontend does not yet expose pagination controls. The backend may initially return all records only while the dataset remains safely bounded.
-
-## Idempotency and audit requirements
-
-Before live mutations are enabled:
-
-- The backend must support replay-safe mutation handling.
-- Duplicate button presses and network retries must not create duplicate records or messages.
-- Every mutation must record administrator identity, operation, target, outcome, timestamp, request ID, and relevant before/after state.
-- Sensitive customer data must not be written to application logs unnecessarily.
+- Duplicate button presses and network retries must not create duplicate mutations.
+- Public and protected mutation paths use separate rate-limit and idempotency namespaces.
+- Every mutation records operation, target where available, outcome, actor class, timestamp, and request ID.
+- Sensitive customer data and secrets must not be written to logs unnecessarily.
 
 ## Production acceptance gates
 
-This contract is not complete until the following are demonstrated in staging:
+Production is not approved until all applicable gates are demonstrated in staging:
 
-1. Two administrators cannot exceed their assigned permissions.
-2. Expired sessions receive `401` and cannot mutate data.
-3. Disallowed origins and missing mutation headers are rejected before business logic runs.
-4. Invalid order transitions return `409` without changing the order.
-5. Invalid product input returns `422` with field errors.
-6. Rate limits return `429` without partial processing.
-7. Ambiguous customer consent never becomes message-authorized.
-8. STOP/opt-out processing prevents subsequent sends.
-9. Duplicate requests do not create duplicate mutations or messages.
-10. Audit entries and database recovery procedures are verified.
+1. Durable shared session, rate-limit, and idempotency stores are connected.
+2. Expired administrator sessions receive `401` and cannot mutate data.
+3. Disallowed origins and incorrect request markers are rejected before business logic.
+4. Public duplicate submissions are replay safe across instances.
+5. Invalid order transitions return `409` without changing records.
+6. Invalid public and product input returns `422` with field errors.
+7. Rate limits return `429` without partial processing.
+8. Provider failures never disclose keys or upstream payloads.
+9. Ambiguous customer consent never becomes message-authorized.
+10. STOP/opt-out processing prevents subsequent sends.
+11. Audit records and recovery procedures are verified.
+12. Payments, inventory reservation, and messaging receive separate end-to-end approval.
