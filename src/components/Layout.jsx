@@ -94,7 +94,7 @@ export default function Layout() {
         role={open ? 'dialog' : undefined}
         aria-modal={open ? 'true' : undefined}
         aria-label="Primary navigation"
-        className={`${open ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-40 w-72 bg-emerald-950 text-white transition-transform lg:static lg:w-auto lg:translate-x-0`}
+        className={`${open ? 'visible translate-x-0' : 'invisible -translate-x-full lg:visible'} fixed inset-y-0 left-0 z-40 w-72 bg-emerald-950 text-white transition-transform lg:static lg:w-auto lg:translate-x-0`}
       >
         <div className="flex h-full flex-col">
           <div className="flex items-center justify-between border-b border-white/10 p-5">
