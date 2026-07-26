@@ -4,6 +4,7 @@ import {
   BellRing,
   ClipboardList,
   LayoutDashboard,
+  LogOut,
   Menu,
   MessageSquareText,
   PackageOpen,
@@ -11,6 +12,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { useAuth } from '../authContext';
 import { isDemoMode, liveMutationsEnabled } from '../api';
 
 const navigation = [
@@ -32,6 +34,7 @@ const FOCUSABLE_SELECTOR = [
 ].join(',');
 
 export default function Layout() {
+  const { logout, session, status } = useAuth();
   const [open, setOpen] = useState(false);
   const navigationRef = useRef(null);
   const closeButtonRef = useRef(null);
@@ -44,6 +47,7 @@ export default function Layout() {
     const previousOverflow = document.body.style.overflow;
     const previouslyFocused = document.activeElement;
     const content = contentRef.current;
+    const menuButton = menuButtonRef.current;
     if (content) content.inert = true;
     document.body.style.overflow = 'hidden';
 
@@ -82,7 +86,7 @@ export default function Layout() {
       window.removeEventListener('keydown', handleKeyDown);
       if (content) content.inert = false;
       if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
-      else menuButtonRef.current?.focus();
+      else menuButton?.focus();
     };
   }, [open]);
 
@@ -140,7 +144,22 @@ export default function Layout() {
           </nav>
 
           <div className="border-t border-white/10 p-4 text-xs text-emerald-200">
-            Orders, customers, and pickup communication in one place.
+            <p className="mb-3">
+              {isDemoMode
+                ? 'Demo administrator session'
+                : `Signed in as ${session?.administrator_id || 'administrator'}`}
+            </p>
+            {!isDemoMode && (
+              <button
+                type="button"
+                className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/20 px-3 py-2 font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => void logout()}
+                disabled={status === 'signing-out'}
+              >
+                <LogOut aria-hidden="true" size={18} />
+                {status === 'signing-out' ? 'Signing out…' : 'Sign out'}
+              </button>
+            )}
           </div>
         </div>
       </aside>

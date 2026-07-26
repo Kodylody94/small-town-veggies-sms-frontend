@@ -85,7 +85,7 @@ function unavailableOrderGateway() {
 }
 
 export function createRuntimeDependencies(env = process.env) {
-  const productionRuntime = (env.BACKEND_RUNTIME_MODE || (env.NODE_ENV === 'production' ? 'production' : 'development')) === 'production';
+  const productionRuntime = env.NODE_ENV === 'production' || env.BACKEND_RUNTIME_MODE === 'production';
   const sandboxOrderSubmissions = env.THREE_MIN_API_ENVIRONMENT === 'sandbox';
   return {
     getConfig: () => readConfig(env),

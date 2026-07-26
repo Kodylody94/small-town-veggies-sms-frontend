@@ -67,7 +67,13 @@ export function parseCookies(header) {
     .reduce((cookies, part) => {
       const separator = part.indexOf('=');
       if (separator < 1) return cookies;
-      cookies[part.slice(0, separator)] = decodeURIComponent(part.slice(separator + 1));
+      const name = part.slice(0, separator);
+      const value = part.slice(separator + 1);
+      try {
+        cookies[name] = decodeURIComponent(value);
+      } catch {
+        cookies[name] = value;
+      }
       return cookies;
     }, {});
 }
