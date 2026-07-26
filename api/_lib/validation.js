@@ -112,7 +112,7 @@ export function validateProduct(body) {
     Object.assign(errors, error.fieldErrors);
   }
 
-  const price = Number(body?.price);
+  const price = typeof body?.price === 'number' ? body.price : Number.NaN;
   if (!Number.isFinite(price) || price < 0 || price > 10_000) {
     errors.price = 'price must be a number from 0 through 10000.';
   }

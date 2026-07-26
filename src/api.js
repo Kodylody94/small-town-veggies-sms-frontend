@@ -23,6 +23,16 @@ const demoPayloads = {
   '/api/products': demoProducts,
 };
 
+const demoAuthSession = {
+  authenticated: true,
+  administrator_id: 'demo',
+  csrf_token: null,
+  expires_at: null,
+  demo: true,
+};
+
+let unauthorizedHandler = null;
+
 function clonePayload(payload) {
   if (typeof structuredClone === 'function') return structuredClone(payload);
   return JSON.parse(JSON.stringify(payload));
@@ -34,7 +44,7 @@ function encodeOrderId(id) {
   return encodeURIComponent(value);
 }
 
-function createIdempotencyKey() {
+export function createIdempotencyKey() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
   if (globalThis.crypto?.getRandomValues) {
     const bytes = new Uint8Array(24);
@@ -50,6 +60,17 @@ export function setCsrfToken(value) {
 
 export function clearCsrfToken() {
   csrfToken = null;
+}
+
+export function setUnauthorizedHandler(handler) {
+  unauthorizedHandler = typeof handler === 'function' ? handler : null;
+  return () => {
+    if (unauthorizedHandler === handler) unauthorizedHandler = null;
+  };
+}
+
+export function setSessionSecurity(session) {
+  setCsrfToken(session?.csrf_token);
 }
 
 export function buildRequestHeaders(options = {}, isMutation = false, policy = {}) {
@@ -103,12 +124,18 @@ async function parseResponse(response) {
         : null;
     const plainTextMessage = contentType.startsWith('text/plain') ? payload : null;
     const message = structuredMessage ?? plainTextMessage;
-
-    throw new Error(
+    const error = new Error(
       typeof message === 'string' && message.trim()
         ? message.trim().slice(0, 300)
         : `Request failed with status ${response.status}.`,
     );
+    error.status = response.status;
+    if (payload && typeof payload === 'object') {
+      error.code = payload.code;
+      error.fieldErrors = payload.field_errors;
+      error.requestId = payload.request_id;
+    }
+    throw error;
   }
 
   if (payload && typeof payload === 'object' && 'data' in payload) {
@@ -130,7 +157,7 @@ async function request(path, options = {}, policy = {}) {
   }
 
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const { headers: _providedHeaders, ...fetchOptions } = options;
   const headers = buildRequestHeaders(options, isMutation, policy);
 
@@ -147,10 +174,11 @@ async function request(path, options = {}, policy = {}) {
     if (error?.name === 'AbortError') {
       throw new Error('The backend did not respond within 15 seconds.', { cause: error });
     }
+    if (error?.status === 401 && policy.notifyUnauthorized !== false) unauthorizedHandler?.(error);
     if (error instanceof Error) throw error;
     throw new Error('An unexpected network error occurred.', { cause: error });
   } finally {
-    window.clearTimeout(timeoutId);
+    globalThis.clearTimeout(timeoutId);
   }
 }
 
@@ -181,30 +209,35 @@ function orderSubmissionRequest(order) {
       requiresIdempotency: true,
       requestMarker: ORDER_FORM_REQUEST_MARKER,
       allowInDemoMode: true,
+      notifyUnauthorized: false,
     },
   );
 }
 
 export const api = {
   login: async (password) => {
+    if (isDemoMode) return clonePayload(demoAuthSession);
     const session = await request(
       '/api/auth/login',
       { method: 'POST', body: JSON.stringify({ password }) },
-      { mutation: true },
+      { mutation: true, notifyUnauthorized: false },
     );
     setCsrfToken(session?.csrf_token);
     return session;
   },
   getSession: async () => {
-    const session = await request('/api/auth/session');
+    if (isDemoMode) return clonePayload(demoAuthSession);
+    const session = await request('/api/auth/session', {}, { notifyUnauthorized: false });
     setCsrfToken(session?.csrf_token);
     return session;
   },
-  logout: async () => {
+  logout: async (sessionCsrfToken) => {
+    if (isDemoMode) return { authenticated: false };
+    if (sessionCsrfToken) setCsrfToken(sessionCsrfToken);
     const result = await request(
       '/api/auth/logout',
       { method: 'POST' },
-      { mutation: true, requiresCsrf: true },
+      { mutation: true, requiresCsrf: true, notifyUnauthorized: false },
     );
     clearCsrfToken();
     return result;

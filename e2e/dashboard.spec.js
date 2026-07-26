@@ -6,7 +6,17 @@ const { expect, test } = require('@playwright/test');
 const API_ORIGIN = 'https://api.small-town-veggies.test';
 const APP_ORIGIN = 'http://127.0.0.1:4173';
 
+const administratorSession = {
+  authenticated: true,
+  administrator_id: 'owner',
+  csrf_token: 'csrf-test-token-that-is-long-enough',
+  expires_at: '2026-07-01T12:00:00Z',
+};
+
 const defaultPayloads = {
+  '/api/auth/session': { data: administratorSession },
+  '/api/auth/login': { data: administratorSession },
+  '/api/auth/logout': { data: { authenticated: false } },
   '/api/orders': [
     {
       id: 99,
@@ -49,8 +59,25 @@ const defaultPayloads = {
 
 async function mockApi(page, overrides = {}) {
   await page.route(`${API_ORIGIN}/api/**`, async (route) => {
-    const pathname = new URL(route.request().url()).pathname;
-    const configured = overrides[pathname];
+    const request = route.request();
+    const method = request.method();
+    const pathname = new URL(request.url()).pathname;
+
+    if (method === 'OPTIONS') {
+      await route.fulfill({
+        status: 204,
+        headers: {
+          'Access-Control-Allow-Origin': APP_ORIGIN,
+          'Access-Control-Allow-Credentials': 'true',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers':
+            'Content-Type, X-Small-Town-Veggies-Request, X-CSRF-Token, Idempotency-Key',
+        },
+      });
+      return;
+    }
+
+    const configured = overrides[`${method} ${pathname}`] ?? overrides[pathname];
     const response = configured ?? { status: 200, body: defaultPayloads[pathname] ?? [] };
 
     await route.fulfill({
@@ -64,6 +91,24 @@ async function mockApi(page, overrides = {}) {
     });
   });
 }
+
+test('requires an administrator session and returns to the requested page after login', async ({ page }) => {
+  await mockApi(page, {
+    'GET /api/auth/session': {
+      status: 401,
+      body: { message: 'A valid administrator session is required.', code: 'ADMINISTRATOR_SESSION_REQUIRED' },
+    },
+  });
+
+  await page.goto('/orders');
+  await expect(page.getByRole('heading', { name: 'Administrator sign in' })).toBeVisible();
+
+  await page.getByLabel('Administrator password').fill('a-valid-test-password');
+  await page.getByRole('button', { name: 'Sign in securely' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Orders' })).toBeVisible();
+  await expect(page).toHaveURL(/\/orders$/);
+});
 
 test('renders protected read-only data and sorts recent orders by timestamp', async ({ page }) => {
   await mockApi(page);
@@ -93,7 +138,7 @@ test('fails closed for ambiguous consent and product availability', async ({ pag
   await expect(ambiguousProduct).toContainText('Unknown — unavailable');
 });
 
-test('surfaces normalized API authorization errors', async ({ page }) => {
+test('returns to sign in when a protected API request reports an expired session', async ({ page }) => {
   await mockApi(page, {
     '/api/orders': {
       status: 401,
@@ -105,9 +150,16 @@ test('surfaces normalized API authorization errors', async ({ page }) => {
   });
 
   await page.goto('/orders');
-  const alert = page.getByRole('alert');
-  await expect(alert).toContainText('Could not load orders');
-  await expect(alert).toContainText('Your administrator session has expired.');
+  await expect(page.getByRole('heading', { name: 'Administrator sign in' })).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('Your administrator session has expired.');
+});
+
+test('signs out through the protected backend session endpoint', async ({ page }) => {
+  await mockApi(page);
+  await page.goto('/');
+
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expect(page.getByRole('heading', { name: 'Administrator sign in' })).toBeVisible();
 });
 
 test('contains mobile navigation focus and restores it after closing', async ({ page }) => {
@@ -132,7 +184,7 @@ test('contains mobile navigation focus and restores it after closing', async ({ 
   expect(contentIsInert).toBe(true);
 
   await page.keyboard.press('Shift+Tab');
-  await expect(page.getByRole('link', { name: 'Reminders' })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Sign out' })).toBeFocused();
 
   await page.keyboard.press('Escape');
   await expect(firstNavigationLink).toBeHidden();
