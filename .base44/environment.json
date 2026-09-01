@@ -1,0 +1,17 @@
+{
+  "previewPort": 3000,
+  "healthPath": "/",
+  "startCommand": "docker compose -f docker-compose.base44.yml up -d",
+  "secrets": [
+    {
+      "name": "THREE_MIN_API_SANDBOX_KEY",
+      "description": "Sandbox API key for the 3Min order provider (starts with tm_test_). Only needed to enable the public /order sandbox form. Get it from the 3Min API provider dashboard.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "THREE_MIN_API_URL",
+      "description": "Sandbox endpoint URL for the 3Min order provider (https://api.3minapi.com/api/v1/data/<id>). Only needed to enable the public /order sandbox form.",
+      "requiredAtBoot": false
+    }
+  ]
+}
